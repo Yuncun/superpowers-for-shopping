@@ -1,4 +1,6 @@
 {
-  "description": "superpowers-for-shopping — hooks (none active in Plan 1)",
-  "hooks": {}
+  "description": "superpowers-for-shopping",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" }] }]
+  }
 }
