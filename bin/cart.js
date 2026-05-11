@@ -24,7 +24,7 @@ function parseValue(raw) {
 }
 
 async function cmdInit() {
-  await writeProfile({ ...getDefaultProfile(), last_setup: new Date().toISOString().slice(0, 10) });
+  await writeProfile(getDefaultProfile());
   console.log('Initialized profile at ~/.claude/cart/profile.md');
 }
 
