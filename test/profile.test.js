@@ -193,6 +193,28 @@ test('writeProfile sanitizes pipe characters in cell values', async () => {
   assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
 });
 
+test('readProfile throws a helpful error when YAML is malformed', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await fs.mkdir(path.join(tmp, '.claude/cart'), { recursive: true });
+  await fs.writeFile(path.join(tmp, '.claude/cart/profile.md'), `---
+budget_default: [unterminated
+---
+
+# Purchase history
+| date | item | brand | $ | kept | notes |
+|---|---|---|---|---|---|
+
+# Thumb signals
+| date | category | up | down |
+|---|---|---|---|
+`);
+  await assert.rejects(
+    () => readProfile(),
+    err => err.message.includes('profile.md') && err.message.toLowerCase().includes('yaml')
+  );
+});
+
 test('readProfile preserves last_setup as a string', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
   process.env.HOME = tmp;
