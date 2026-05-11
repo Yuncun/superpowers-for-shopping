@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as shopify from '../../lib/retailers/shopify.js';
 import { detect } from '../../lib/retailers/shopify.js';
 import { search } from '../../lib/retailers/shopify.js';
+import { fetchVariants, cartUrl } from '../../lib/retailers/shopify.js';
 
 const SAMPLE_PRODUCT = {
   id: 100,
@@ -264,4 +265,82 @@ test('search: handles price as numeric (not string) by stringifying', async () =
   });
   const results = await search('marinelayer.com', 'x', { fetchImpl });
   assert.equal(results[0].price, '98');
+});
+
+// --- cartUrl ---
+
+test('cartUrl: builds cart URL from bare host', () => {
+  assert.equal(cartUrl('marinelayer.com'), 'https://marinelayer.com/cart');
+});
+
+test('cartUrl: normalizes input (protocol, path, case)', () => {
+  assert.equal(cartUrl('HTTPS://MarineLayer.com/products/x'), 'https://marinelayer.com/cart');
+});
+
+test('cartUrl: throws invalid_host on bad input', () => {
+  assert.throws(() => cartUrl(''), (err) => err.code === 'invalid_host');
+});
+
+// --- fetchVariants ---
+
+test('fetchVariants: returns variants from product JSON', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/products/crew-sweater.json': {
+      body: {
+        product: {
+          ...SAMPLE_PRODUCT,
+          handle: 'crew-sweater',
+        },
+      },
+    },
+  });
+  const variants = await fetchVariants('https://marinelayer.com/products/crew-sweater', { fetchImpl });
+  assert.equal(variants.length, 2);
+  assert.deepEqual(variants[0], { size: 'M', color: 'Navy', in_stock: true, variant_id: 1001 });
+});
+
+test('fetchVariants: handles trailing slash on URL', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/products/crew-sweater.json': {
+      body: { product: { ...SAMPLE_PRODUCT, handle: 'crew-sweater' } },
+    },
+  });
+  const variants = await fetchVariants('https://marinelayer.com/products/crew-sweater/', { fetchImpl });
+  assert.equal(variants.length, 2);
+});
+
+test('fetchVariants: throws invalid_product_url on missing /products/ segment', async () => {
+  await assert.rejects(
+    () => fetchVariants('https://marinelayer.com/collections/all', { fetchImpl: async () => ({}) }),
+    (err) => err.code === 'invalid_product_url'
+  );
+});
+
+test('fetchVariants: throws invalid_product_url on unparseable input', async () => {
+  for (const bad of ['', 'not a url', 'http://', 'https://marinelayer.com/products/']) {
+    await assert.rejects(
+      () => fetchVariants(bad, { fetchImpl: async () => ({}) }),
+      (err) => err.code === 'invalid_product_url',
+      `expected invalid_product_url for ${JSON.stringify(bad)}`
+    );
+  }
+});
+
+test('fetchVariants: throws http_error on 404 (handle not found)', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/products/no-such.json': { status: 404, body: 'Not Found', contentType: 'text/plain' },
+  });
+  await assert.rejects(
+    () => fetchVariants('https://marinelayer.com/products/no-such', { fetchImpl }),
+    (err) => err.code === 'http_error' && err.status === 404
+  );
+});
+
+test('fetchVariants: handles product with no variants (returns [])', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/products/empty.json': {
+      body: { product: { ...SAMPLE_PRODUCT, handle: 'empty', variants: [] } },
+    },
+  });
+  assert.deepEqual(await fetchVariants('https://marinelayer.com/products/empty', { fetchImpl }), []);
 });
