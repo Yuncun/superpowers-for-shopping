@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getDefaultProfile } from '../lib/profile.js';
-import { readProfile } from '../lib/profile.js';
+import { readProfile, writeProfile } from '../lib/profile.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,4 +57,32 @@ last_setup: 2026-05-10
   assert.equal(p.budget_default, 'high');
   assert.deepEqual(p.palette, ['navy', 'olive']);
   assert.deepEqual(p.brands_love, ['Marine Layer']);
+});
+
+test('writeProfile then readProfile round-trips', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  const original = {
+    ...getDefaultProfile(),
+    sizes: { top: 'M', bottom: '32x32' },
+    budget_default: 'mid',
+    palette: ['navy', 'cream'],
+    brands_love: ['Marine Layer', 'Uniqlo'],
+    brands_avoid: ['Shein'],
+    last_setup: '2026-05-10',
+  };
+  await writeProfile(original);
+  const restored = await readProfile();
+  assert.deepEqual(restored.sizes, original.sizes);
+  assert.deepEqual(restored.palette, original.palette);
+  assert.deepEqual(restored.brands_love, original.brands_love);
+  assert.equal(restored.last_setup, original.last_setup);
+});
+
+test('writeProfile creates the cart dir if missing', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  const stat = await fs.stat(path.join(tmp, '.claude/cart/profile.md'));
+  assert.ok(stat.isFile());
 });
