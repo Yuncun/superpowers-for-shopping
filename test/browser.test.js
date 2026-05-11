@@ -1,7 +1,7 @@
 // test/browser.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, openLoginPage, getCookieHeader } from '../lib/browser.js';
+import { closeBrowser, openLoginPage, getCookieHeader, isLoggedIn } from '../lib/browser.js';
 import { browserProfilePath } from '../lib/paths.js';
 
 function mockExec(routes) {
@@ -253,4 +253,50 @@ test('getCookieHeader handles cookie values that contain special chars (no over-
     },
   });
   assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), 'sid=abc%3D%2F');
+});
+
+test('isLoggedIn returns true when cookies are present', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 's', value: 'x', domain: 'marinelayer.com' }),
+    },
+  });
+  assert.equal(await isLoggedIn('marinelayer.com', { execImpl }), true);
+});
+
+test('isLoggedIn returns false when no cookies', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload(),
+    },
+  });
+  assert.equal(await isLoggedIn('marinelayer.com', { execImpl }), false);
+});
+
+test('isLoggedIn returns false when only unrelated-domain cookies', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 's', value: 'x', domain: 'other.com' }),
+    },
+  });
+  assert.equal(await isLoggedIn('marinelayer.com', { execImpl }), false);
+});
+
+test('isLoggedIn propagates invalid_host', async () => {
+  await assert.rejects(
+    () => isLoggedIn('', { execImpl: async () => ({ stdout: '{}', stderr: '' }) }),
+    (err) => err.code === 'invalid_host'
+  );
+});
+
+test('isLoggedIn propagates browser_failed', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: { success: false, data: null, error: 'oops' },
+    },
+  });
+  await assert.rejects(
+    () => isLoggedIn('marinelayer.com', { execImpl }),
+    (err) => err.code === 'browser_failed'
+  );
 });
