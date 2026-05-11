@@ -2,7 +2,8 @@
 // bin/cart.js
 import {
   readProfile, writeProfile, getDefaultProfile,
-  appendPurchase, appendThumbSignal, updateFrontmatter, validateProfile,
+  appendPurchase, appendThumbSignal, validateProfile,
+  mergeFrontmatter,
 } from '../lib/profile.js';
 
 const [, , cmd, ...args] = process.argv;
@@ -41,14 +42,15 @@ async function cmdSet(pairs) {
     const value = parseValue(pair.slice(eq + 1));
     setNested(updates, key, value);
   }
-  await updateFrontmatter(updates);
-  const p = await readProfile();
-  const v = validateProfile(p);
+  const current = await readProfile();
+  const merged = mergeFrontmatter(current, updates);
+  const v = validateProfile(merged);
   if (!v.valid) {
-    console.error('Profile is now invalid:');
+    console.error('Profile would be invalid:');
     for (const e of v.errors) console.error(`  - ${e}`);
     process.exit(2);
   }
+  await writeProfile(merged);
 }
 
 async function cmdAppendThumb(json) {

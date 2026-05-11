@@ -49,3 +49,22 @@ test('cart set with array value parses JSON', async () => {
   const parsed = JSON.parse(stdout);
   assert.deepEqual(parsed.brands_love, ['Marine Layer', 'Uniqlo']);
 });
+
+test('cart set rejects invalid values without writing to disk', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  await runCli(['init'], { HOME: tmp });
+  // Snapshot the file before the bad set.
+  const before = await fs.readFile(path.join(tmp, '.claude/cart/profile.md'), 'utf8');
+
+  // Try to set an invalid budget_default. Should exit non-zero AND not change the file.
+  let exitCode = 0;
+  try {
+    await runCli(['set', 'budget_default=extravagant'], { HOME: tmp });
+  } catch (err) {
+    exitCode = err.code ?? 1;
+  }
+  assert.notEqual(exitCode, 0, 'invalid set should exit non-zero');
+
+  const after = await fs.readFile(path.join(tmp, '.claude/cart/profile.md'), 'utf8');
+  assert.equal(before, after, 'invalid set must not modify profile.md on disk');
+});
