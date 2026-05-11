@@ -174,3 +174,40 @@ test('updateFrontmatter deep-merges fit_notes', async () => {
   assert.equal(p.fit_notes.sweater, 'relaxed');
   assert.equal(p.fit_notes.pants, 'tapered');
 });
+
+// --- Robustness / adversarial-input tests ---
+
+test('writeProfile sanitizes pipe characters in cell values', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendThumbSignal({
+    date: '2026-05-10',
+    category: 'sweater',
+    up: 'sleek | minimal',
+    down: 'chunky',
+  });
+  const p = await readProfile();
+  assert.equal(p.thumb_signals.length, 1);
+  assert.ok(!p.thumb_signals[0].up.includes('|'), 'pipe should be sanitized in stored value');
+  assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
+});
+
+test('writeProfile sanitizes newlines in cell values', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({
+    date: '2026-05-10',
+    item: 'sweater',
+    brand: 'Marine Layer',
+    $: '98',
+    kept: '?',
+    notes: 'line1\nline2',
+  });
+  const p = await readProfile();
+  assert.equal(p.purchase_history.length, 1, 'newline must not split the row');
+  assert.ok(!p.purchase_history[0].notes.includes('\n'));
+  assert.ok(p.purchase_history[0].notes.includes('line1'));
+  assert.ok(p.purchase_history[0].notes.includes('line2'));
+});
