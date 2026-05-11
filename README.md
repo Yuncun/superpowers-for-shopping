@@ -2,7 +2,7 @@
 
 An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.3.0 — profile, Shopify handler, and browser-session library. The `/cart` slash command (Plan 5) is the next milestone. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
+**Status:** v0.4.0 — profile, Shopify handler, browser-session library, and local UI server. Slash command (Plan 5) is the next milestone. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
 
 ## Scope
 

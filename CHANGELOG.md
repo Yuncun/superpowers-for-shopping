@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 — 2026-05-10
+
+Adds the local web UI server. Pure-Node HTTP + Server-Sent Events, no external
+runtime deps. Drives the user's browser through loading → thumbs grid → final
+card → cart redirect stages.
+
+- New `server/state.js`: session store with action queue and idle expiry.
+- New `server/render.js`: self-contained HTML/CSS/JS for the session page.
+- New `server/ui.js`: HTTP server, SSE stream, POST action endpoint, redirect
+  helper. Bound to `127.0.0.1` only; per-session random token gates all routes.
+- New `npm run smoke:ui` — spins up a real server with mock candidates for
+  manual UX review. Visual eyeball confirmed against agent-browser.
+
+Not yet wired up: the `/cart` slash command (Plan 5) is what composes this
+with Plan 2's search/addToCart and Plan 3's browser cookie flow.
+
 ## 0.3.0 — 2026-05-10
 
 Adds the browser-session library. Pure Node wrapping the `agent-browser` CLI
