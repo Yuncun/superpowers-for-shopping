@@ -193,6 +193,36 @@ test('writeProfile sanitizes pipe characters in cell values', async () => {
   assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
 });
 
+test('parseTable tolerates rows without trailing pipe', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await fs.mkdir(path.join(tmp, '.claude/cart'), { recursive: true });
+  await fs.writeFile(path.join(tmp, '.claude/cart/profile.md'), `---
+sizes: {}
+budget_default: mid
+budget_caps: {}
+palette: []
+brands_love: []
+brands_avoid: []
+fit_notes: {}
+moodboard_url: ""
+last_setup: 2026-05-10
+---
+
+# Purchase history
+| date | item | brand | $ | kept | notes |
+|---|---|---|---|---|---|
+| 2026-05-10 | sweater | Marine Layer | 98 | yes | navy crew
+
+# Thumb signals
+| date | category | up | down |
+|---|---|---|---|
+`);
+  const p = await readProfile();
+  assert.equal(p.purchase_history.length, 1);
+  assert.equal(p.purchase_history[0].notes, 'navy crew', 'last column should not be dropped when trailing pipe missing');
+});
+
 test('writeProfile sanitizes newlines in cell values', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
   process.env.HOME = tmp;
