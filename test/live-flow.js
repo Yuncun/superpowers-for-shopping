@@ -6,6 +6,7 @@
 
 import { execFile } from 'node:child_process';
 import { readProfile } from '../lib/profile.js';
+import { readRetailers } from '../lib/retailers-store.js';
 import { search } from '../lib/retailers/shopify.js';
 import { getCookieHeader } from '../lib/browser.js';
 import { startServer } from '../server/ui.js';
@@ -40,8 +41,7 @@ async function main() {
 
   const result = await runCartFlow({
     query,
-    retailers: ['marinelayer.com'],
-    deps: { readProfile, search, getCookieHeader, addToCart, startServer, openUrl, log, sleep },
+    deps: { readProfile, readRetailers, search, getCookieHeader, addToCart, startServer, openUrl, log, sleep },
   });
 
   process.stderr.write(`\noutcome: ${JSON.stringify(result)}\n`);
