@@ -58,7 +58,7 @@
     "cart": "./bin/cart.js"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test 'test/**/*.js'"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
