@@ -12,7 +12,8 @@
   },
   "scripts": {
     "test": "node --test 'test/**/*.test.js'",
-    "smoke:live": "node test/live-marinelayer.js"
+    "smoke:live": "node test/live-marinelayer.js",
+    "smoke:browser": "node test/live-browser.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
