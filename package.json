@@ -8,13 +8,15 @@
     "node": ">=20"
   },
   "bin": {
-    "cart": "./bin/cart.js"
+    "cart": "./bin/cart.js",
+    "cart-flow": "./bin/cart-flow.js"
   },
   "scripts": {
     "test": "node --test 'test/**/*.test.js'",
     "smoke:live": "node test/live-marinelayer.js",
     "smoke:browser": "node test/live-browser.js",
-    "smoke:ui": "node test/live-ui.js"
+    "smoke:ui": "node test/live-ui.js",
+    "smoke:flow": "node test/live-flow.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
