@@ -263,3 +263,145 @@ test('shutdown is called on every exit path', async () => {
     assert.equal(server.shutdownCount(), 1, 'dismissed must shutdown');
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 2: auth + cart error paths
+// ---------------------------------------------------------------------------
+
+test('auth_required when getCookieHeader returns null', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let addToCartCalled = false;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => null,
+    addToCart: async () => { addToCartCalled = true; return { ok: true }; },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'auth_required');
+  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(addToCartCalled, false, 'addToCart must NOT be called when cookie is null');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('auth_required when addToCart returns authentication_required error', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => 'sess=abc',
+    addToCart: async () => ({ ok: false, error: 'authentication_required' }),
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'auth_required');
+  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('cart_error when addToCart returns non-auth error', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => 'sess=abc',
+    addToCart: async () => ({ ok: false, error: 'out_of_stock' }),
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'cart_error');
+  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(result.error, 'out_of_stock');
+  const doneState = session.pushed.find(s => s.stage === 'done');
+  assert.ok(doneState, 'done stage must be pushed');
+  assert.ok(doneState.message.includes('out_of_stock'), 'message includes the error');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('cart_error when top.variants is empty — addToCart not called', async () => {
+  const candidates = [
+    {
+      url: 'https://marinelayer.com/products/empty-variants',
+      title: 'Empty Variants Product',
+      brand: 'Marine Layer',
+      price: '59.00',
+      image: null,
+      variants: [],
+    },
+  ];
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let addToCartCalled = false;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    addToCart: async () => { addToCartCalled = true; return { ok: true }; },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'cart_error');
+  assert.equal(result.error, 'no_variants');
+  assert.equal(addToCartCalled, false, 'addToCart must NOT be called when variants is empty');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('regression: success still works after Task 2 changes', async () => {
+  const candidates = makeCandidates(3);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const deps = { ...baseDeps({ session, server, candidates }) };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.ok(result.product);
+  assert.ok(result.cartUrl.startsWith('https://'));
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('addToCart is called with correct host, variantId, and cookie', async () => {
+  const candidates = [
+    {
+      url: 'https://marinelayer.com/products/some-sweater',
+      title: 'Some Sweater',
+      brand: 'Marine Layer',
+      price: '75.00',
+      image: null,
+      variants: [{ size: 'M', color: 'Navy', in_stock: true, variant_id: 9876 }],
+    },
+  ];
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let capturedArgs;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => 'mysess=xyz',
+    addToCart: async (args) => { capturedArgs = args; return { ok: true }; },
+  };
+
+  await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.ok(capturedArgs, 'addToCart was called');
+  assert.equal(capturedArgs.host, 'marinelayer.com');
+  assert.equal(capturedArgs.variantId, 9876);
+  assert.equal(capturedArgs.cookie, 'mysess=xyz');
+});
