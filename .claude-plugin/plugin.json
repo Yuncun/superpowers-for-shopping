@@ -1,0 +1,12 @@
+{
+  "name": "superpowers-for-shopping",
+  "version": "0.0.1",
+  "description": "ADHD-helper for considered purchases. Takes 'I need a sweater' to a populated cart with one click.",
+  "author": {
+    "name": "Eric Shen"
+  },
+  "homepage": "https://github.com/Yuncun/superpowers-for-shopping",
+  "repository": "https://github.com/Yuncun/superpowers-for-shopping",
+  "license": "MIT",
+  "keywords": ["shopping", "adhd", "claude-code", "agent-browser", "shopify"]
+}
