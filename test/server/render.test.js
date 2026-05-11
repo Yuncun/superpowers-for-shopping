@@ -45,6 +45,16 @@ test('JS branches on state.stage for thumbs, final, redirect', () => {
   assert.ok(html.includes('redirect'), 'missing redirect stage');
 });
 
+test('JS render contains a branch for login_required stage', () => {
+  const html = renderPage(BASE);
+  assert.ok(html.includes('login_required'), 'missing login_required stage branch in JS');
+});
+
+test('JS render sends login_complete action for login_required stage', () => {
+  const html = renderPage(BASE);
+  assert.ok(html.includes('login_complete'), "missing login_complete action in JS");
+});
+
 test('JS opens an EventSource', () => {
   const html = renderPage(BASE);
   assert.ok(html.includes('EventSource('), 'missing EventSource call');

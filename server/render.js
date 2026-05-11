@@ -365,6 +365,26 @@ window.__SESSION__ = ${sessionJson};
       return;
     }
 
+    if (stage === 'login_required') {
+      var host = escHtml(state.host || '');
+      var loginMsg = escHtml(state.message || '');
+      root.innerHTML =
+        '<div class="final-wrap">' +
+          '<div class="final-card login-card">' +
+            '<div class="final-body">' +
+              '<div class="final-brand">Almost there</div>' +
+              '<div class="final-title">Log in to ' + host + '</div>' +
+              '<p class="login-msg">' + loginMsg + '. We\'ve opened the page in another tab — log in, then click below.</p>' +
+              '<button class="btn-primary" id="btn-login-complete">I\'m logged in, retry</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      document.getElementById('btn-login-complete').addEventListener('click', function() {
+        sendAction({ type: 'login_complete' });
+      });
+      return;
+    }
+
     if (stage === 'done') {
       showMsg(state.message || 'Done.');
       return;
