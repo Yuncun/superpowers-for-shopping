@@ -96,3 +96,51 @@ test('httpPostJson surfaces 422 with parsed body in error', async () => {
     (err) => err.code === 'http_error' && err.status === 422 && err.message.includes('Out of stock')
   );
 });
+
+test('httpPostJson wraps network errors as network_error with URL', async () => {
+  const fetchImpl = async () => { throw new Error('ETIMEDOUT'); };
+  await assert.rejects(
+    () => httpPostJson('https://example.com/cart/add.js', {}, { fetchImpl }),
+    (err) =>
+      err.code === 'network_error'
+      && err.message.includes('ETIMEDOUT')
+      && err.url === 'https://example.com/cart/add.js'
+  );
+});
+
+test('httpGetJson throws invalid_url on unparseable input', async () => {
+  for (const bad of ['', 'not a url', 'http://', '/relative/path']) {
+    await assert.rejects(
+      () => httpGetJson(bad, { fetchImpl: async () => ({}) }),
+      (err) => err.code === 'invalid_url',
+      `expected invalid_url for ${JSON.stringify(bad)}`
+    );
+  }
+});
+
+test('httpPostJson throws invalid_url on unparseable input', async () => {
+  await assert.rejects(
+    () => httpPostJson('not a url', {}, { fetchImpl: async () => ({}) }),
+    (err) => err.code === 'invalid_url'
+  );
+});
+
+test('httpGetJson accepts application/json with charset (Shopify-style)', async () => {
+  const fetchImpl = async () => makeResponse({
+    body: { ok: true },
+    contentType: 'application/json; charset=utf-8',
+  });
+  const result = await httpGetJson('https://example.com/x', { fetchImpl });
+  assert.deepEqual(result, { ok: true });
+});
+
+test('httpGetJson rejects application/jsonweirdsuffix as not_json', async () => {
+  const fetchImpl = async () => makeResponse({
+    body: '{"hello":"world"}',
+    contentType: 'application/jsonweirdsuffix',
+  });
+  await assert.rejects(
+    () => httpGetJson('https://example.com/x', { fetchImpl }),
+    (err) => err.code === 'not_json'
+  );
+});
