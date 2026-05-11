@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getDefaultProfile } from '../lib/profile.js';
-import { readProfile, writeProfile } from '../lib/profile.js';
+import {
+  getDefaultProfile,
+  readProfile,
+  writeProfile,
+  validateProfile,
+  appendPurchase,
+  appendThumbSignal,
+  updateFrontmatter,
+} from '../lib/profile.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -87,8 +94,6 @@ test('writeProfile creates the cart dir if missing', async () => {
   assert.ok(stat.isFile());
 });
 
-import { validateProfile } from '../lib/profile.js';
-
 test('validateProfile passes a complete profile', () => {
   const p = {
     ...getDefaultProfile(),
@@ -118,8 +123,6 @@ test('validateProfile flags non-array palette', () => {
   assert.equal(r.valid, false);
   assert.ok(r.errors.some(e => e.includes('palette')));
 });
-
-import { appendPurchase, appendThumbSignal } from '../lib/profile.js';
 
 test('appendPurchase adds a row to purchase_history', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
@@ -152,8 +155,6 @@ test('appendThumbSignal adds a row to thumb_signals', async () => {
   assert.equal(p.thumb_signals.length, 1);
   assert.equal(p.thumb_signals[0].up, 'ribbed crew');
 });
-
-import { updateFrontmatter } from '../lib/profile.js';
 
 test('updateFrontmatter merges shallow fields', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
