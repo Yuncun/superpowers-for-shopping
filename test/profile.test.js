@@ -86,3 +86,35 @@ test('writeProfile creates the cart dir if missing', async () => {
   const stat = await fs.stat(path.join(tmp, '.claude/cart/profile.md'));
   assert.ok(stat.isFile());
 });
+
+import { validateProfile } from '../lib/profile.js';
+
+test('validateProfile passes a complete profile', () => {
+  const p = {
+    ...getDefaultProfile(),
+    sizes: { top: 'M' },
+    budget_default: 'mid',
+  };
+  assert.equal(validateProfile(p).valid, true);
+});
+
+test('validateProfile flags missing budget_default', () => {
+  const p = { ...getDefaultProfile(), budget_default: undefined };
+  const r = validateProfile(p);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some(e => e.includes('budget_default')));
+});
+
+test('validateProfile flags invalid budget_default value', () => {
+  const p = { ...getDefaultProfile(), budget_default: 'extravagant' };
+  const r = validateProfile(p);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some(e => e.includes('budget_default')));
+});
+
+test('validateProfile flags non-array palette', () => {
+  const p = { ...getDefaultProfile(), palette: 'navy' };
+  const r = validateProfile(p);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some(e => e.includes('palette')));
+});
