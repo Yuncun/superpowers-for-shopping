@@ -4,6 +4,7 @@
 
 import { execFile } from 'node:child_process';
 import { readProfile } from '../lib/profile.js';
+import { readRetailers } from '../lib/retailers-store.js';
 import { search, addToCart } from '../lib/retailers/shopify.js';
 import { getCookieHeader } from '../lib/browser.js';
 import { startServer } from '../server/ui.js';
@@ -15,9 +16,6 @@ if (!query) {
   process.stderr.write('Usage: cart-flow "<query>"\n');
   process.exit(2);
 }
-
-// TODO Plan 6: read from ~/.claude/cart/retailers.md
-const retailers = ['marinelayer.com'];
 
 function openUrl(url) {
   if (process.platform === 'darwin') {
@@ -39,8 +37,7 @@ function sleep(ms) {
 async function main() {
   const result = await runCartFlow({
     query,
-    retailers,
-    deps: { readProfile, search, getCookieHeader, addToCart, startServer, openUrl, log, sleep },
+    deps: { readProfile, readRetailers, search, getCookieHeader, addToCart, startServer, openUrl, log, sleep },
   });
 
   switch (result.outcome) {

@@ -51,6 +51,7 @@ function mockServer(session) {
 function baseDeps({ session, server, candidates = makeCandidates(3) } = {}) {
   return {
     readProfile: async () => ({}),
+    readRetailers: async () => ({ retailers: [{ host: 'marinelayer.com', tier: 2, handler: 'shopify', last_used: '' }] }),
     search: async (_host) => candidates,
     getCookieHeader: async () => 'sess=abc',
     addToCart: async () => ({ ok: true }),
@@ -374,6 +375,69 @@ test('regression: success still works after Task 2 changes', async () => {
   assert.ok(result.product);
   assert.ok(result.cartUrl.startsWith('https://'));
   assert.equal(server.shutdownCount(), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: no-retailers form — reads from store
+// ---------------------------------------------------------------------------
+
+test('no retailers arg: reads from store and searches that host', async () => {
+  const candidates = makeCandidates(3);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let readRetailersCalled = 0;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readRetailers: async () => {
+      readRetailersCalled++;
+      return { retailers: [{ host: 'marinelayer.com', tier: 2, handler: 'shopify', last_used: '' }] };
+    },
+    search: async (host, _query) => {
+      assert.equal(host, 'marinelayer.com');
+      return candidates;
+    },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(readRetailersCalled, 1, 'readRetailers must be called once');
+});
+
+test('explicit retailers arg: readRetailers is NOT called', async () => {
+  const candidates = makeCandidates(3);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let readRetailersCalled = 0;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readRetailers: async () => {
+      readRetailersCalled++;
+      return { retailers: [] };
+    },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['x.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(readRetailersCalled, 0, 'readRetailers must NOT be called when retailers is explicit');
+});
+
+test('empty retailers from store: returns no_results without starting server', async () => {
+  let startServerCalled = false;
+  const deps = {
+    ...baseDeps(),
+    readRetailers: async () => ({ retailers: [] }),
+    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', deps });
+  assert.equal(result.outcome, 'no_results');
+  assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
 });
 
 test('addToCart is called with correct host, variantId, and cookie', async () => {
