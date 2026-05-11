@@ -1,0 +1,19 @@
+{
+  "name": "superpowers-for-shopping",
+  "version": "0.0.1",
+  "description": "ADHD-helper Claude Code plugin for considered purchases",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "cart": "./bin/cart.js"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}
