@@ -81,6 +81,36 @@ test('no_results: returns no_results when all searches return empty', async () =
   assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
 });
 
+test('resilience: a failing retailer search does not block successful ones', async () => {
+  const okCandidate = { brand: 'B', title: 't', price: '50', image: null, url: 'https://ok.com/products/x', variants: [{variant_id: 1, in_stock: true, size: 'M', color: 'navy'}] };
+  const logged = [];
+  const session = mockSession({ actions: [{ type: 'dismissed' }] });
+  const server = mockServer(session);
+  const deps = {
+    ...baseDeps(),
+    log: (m) => logged.push(m),
+    search: async (host) => {
+      if (host === 'broken.com') throw new Error('Expected JSON but got text/html at https://broken.com/products.json');
+      return [okCandidate];
+    },
+    startServer: async () => server,
+  };
+  const result = await runCartFlow({
+    query: 'sweater',
+    retailers: ['ok.com', 'broken.com'],
+    deps,
+  });
+  // The broken retailer should be logged and skipped. The flow should still start
+  // the server with the one ok candidate, then exit dismissed.
+  assert.equal(result.outcome, 'dismissed');
+  assert.ok(logged.some((m) => m.includes('broken.com')), `expected log to mention broken.com, got: ${logged.join(' | ')}`);
+  // Verify the thumbs state was pushed with the ok candidate
+  const thumbsState = session.pushed.find((s) => s.stage === 'thumbs');
+  assert.ok(thumbsState, 'thumbs state should have been pushed');
+  assert.equal(thumbsState.candidates.length, 1);
+  assert.equal(thumbsState.candidates[0].url, 'https://ok.com/products/x');
+});
+
 test('no_results: server is not started even with multiple retailers that all return empty', async () => {
   let startServerCalled = false;
   const deps = {

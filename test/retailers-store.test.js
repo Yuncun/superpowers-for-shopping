@@ -26,31 +26,30 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-// 1. getDefaultRetailers returns 4 entries with expected hosts
-test('getDefaultRetailers returns 4 entries with expected hosts', () => {
+// 1. getDefaultRetailers returns expected entries
+test('getDefaultRetailers returns 3 entries with expected hosts', () => {
   const defaults = getDefaultRetailers();
-  assert.equal(defaults.length, 4);
+  assert.equal(defaults.length, 3);
   const hosts = defaults.map(r => r.host);
   assert.ok(hosts.includes('marinelayer.com'));
   assert.ok(hosts.includes('allbirds.com'));
   assert.ok(hosts.includes('everlane.com'));
-  assert.ok(hosts.includes('mejuri.com'));
 });
 
 // 2. readRetailers auto-creates file if missing
 test('readRetailers auto-creates file if missing', async () => {
   const result = await readRetailers();
   assert.ok(result.retailers);
-  assert.equal(result.retailers.length, 4);
+  assert.equal(result.retailers.length, 3);
   const fileStat = await fs.stat(path.join(tmpDir, '.claude/cart/retailers.md'));
   assert.ok(fileStat.isFile());
 });
 
-// 3. readRetailers after auto-create writes file with 4 defaults
-test('readRetailers after auto-create contains 4 default retailers', async () => {
+// 3. readRetailers after auto-create writes file with defaults
+test('readRetailers after auto-create contains default retailers', async () => {
   await readRetailers();
   const result = await readRetailers();
-  assert.equal(result.retailers.length, 4);
+  assert.equal(result.retailers.length, 3);
   assert.equal(result.retailers[0].host, 'marinelayer.com');
   assert.equal(result.retailers[0].handler, 'shopify');
   assert.equal(result.retailers[0].last_used, '');
