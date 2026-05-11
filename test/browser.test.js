@@ -19,7 +19,7 @@ const PROFILE_ARG = `--profile ${browserProfilePath()}`;
 
 test('closeBrowser succeeds when agent-browser reports success', async () => {
   const execImpl = mockExec({
-    [`agent-browser --profile ${browserProfilePath()} close`]: {
+    [`agent-browser --profile ${browserProfilePath()} close --json`]: {
       stdout: { success: true, data: null, error: null },
     },
   });
@@ -29,7 +29,7 @@ test('closeBrowser succeeds when agent-browser reports success', async () => {
 
 test('closeBrowser is a no-op when no session is open', async () => {
   const execImpl = mockExec({
-    [`agent-browser --profile ${browserProfilePath()} close`]: {
+    [`agent-browser --profile ${browserProfilePath()} close --json`]: {
       stdout: { success: false, data: null, error: 'no active session' },
     },
   });
@@ -49,7 +49,7 @@ test('closeBrowser throws browser_unavailable when agent-browser is not on PATH'
 
 test('closeBrowser surfaces unknown failures as browser_failed', async () => {
   const execImpl = mockExec({
-    [`agent-browser --profile ${browserProfilePath()} close`]: {
+    [`agent-browser --profile ${browserProfilePath()} close --json`]: {
       stdout: { success: false, data: null, error: 'tab crashed' },
     },
   });
@@ -61,7 +61,7 @@ test('closeBrowser surfaces unknown failures as browser_failed', async () => {
 
 test('closeBrowser surfaces malformed JSON output', async () => {
   const execImpl = mockExec({
-    [`agent-browser --profile ${browserProfilePath()} close`]: {
+    [`agent-browser --profile ${browserProfilePath()} close --json`]: {
       stdout: 'not json at all',
     },
   });
@@ -83,9 +83,6 @@ test('closeBrowser surfaces non-zero exit (subprocess threw)', async () => {
 });
 
 test('runAgentBrowser preserves caller-supplied --profile (does not double-add)', async () => {
-  // Indirect test via closeBrowser with a custom args list isn't possible (no exported override).
-  // Instead, we verify that closeBrowser's invocation only ever passes --profile once by checking
-  // the seen args. This guards against accidental duplication during refactors.
   let seenArgs;
   const execImpl = async (file, args) => {
     seenArgs = args;
@@ -94,6 +91,18 @@ test('runAgentBrowser preserves caller-supplied --profile (does not double-add)'
   await closeBrowser({ execImpl });
   const profileFlagCount = seenArgs.filter((a) => a === '--profile').length;
   assert.equal(profileFlagCount, 1, `expected exactly one --profile flag, got ${profileFlagCount}: ${seenArgs.join(' ')}`);
+});
+
+test('runAgentBrowser always passes --json (agent-browser defaults to human-readable output)', async () => {
+  let seenArgs;
+  const execImpl = async (file, args) => {
+    seenArgs = args;
+    return { stdout: JSON.stringify({ success: true, data: null, error: null }), stderr: '' };
+  };
+  await closeBrowser({ execImpl });
+  assert.ok(seenArgs.includes('--json'), `expected --json in args, got: ${seenArgs.join(' ')}`);
+  const jsonFlagCount = seenArgs.filter((a) => a === '--json').length;
+  assert.equal(jsonFlagCount, 1, `expected exactly one --json flag, got ${jsonFlagCount}`);
 });
 
 test('openLoginPage navigates to https://<host>/', async () => {
@@ -139,7 +148,7 @@ test('openLoginPage propagates browser_unavailable', async () => {
 
 test('openLoginPage propagates browser_failed when agent-browser reports failure', async () => {
   const execImpl = mockExec({
-    [`agent-browser --profile ${browserProfilePath()} open https://marinelayer.com/`]: {
+    [`agent-browser --profile ${browserProfilePath()} open https://marinelayer.com/ --json`]: {
       stdout: { success: false, data: null, error: 'navigation timeout' },
     },
   });
