@@ -787,3 +787,88 @@ test('ranking: empty applyRanking output returns no_results without starting ser
   assert.equal(result.outcome, 'no_results');
   assert.equal(startServerCalled, false, 'startServer must NOT be called when ranked result is empty');
 });
+
+// ---------------------------------------------------------------------------
+// Plan 10 Task 2: passive palette learning on final-accept success
+// ---------------------------------------------------------------------------
+
+test('palette: success path with new tokens calls updateProfile with merged palette', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const mockProfile = { palette: ['navy'] };
+  const updateCalls = [];
+
+  let extractCalledWith;
+  let mergeCalledWith;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readProfile: async () => mockProfile,
+    extractColors: (product) => { extractCalledWith = product; return ['olive', 'cream']; },
+    mergePalette: (existing, incoming) => {
+      mergeCalledWith = { existing, incoming };
+      return [...existing, ...incoming];
+    },
+    updateProfile: async (patch) => { updateCalls.push(patch); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.ok(extractCalledWith, 'extractColors was called');
+  assert.equal(extractCalledWith.url, result.product.url, 'extractColors called with the accepted product');
+  assert.deepEqual(mergeCalledWith.existing, ['navy']);
+  assert.deepEqual(mergeCalledWith.incoming, ['olive', 'cream']);
+  assert.equal(updateCalls.length, 1, 'updateProfile must be called exactly once');
+  assert.deepEqual(updateCalls[0], { palette: ['navy', 'olive', 'cream'] });
+});
+
+test('palette: extractColors returns [] → updateProfile NOT called', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const updateCalls = [];
+  let mergeCalled = false;
+
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readProfile: async () => ({ palette: ['navy'] }),
+    extractColors: () => [],
+    mergePalette: (existing, incoming) => { mergeCalled = true; return [...existing, ...incoming]; },
+    updateProfile: async (patch) => { updateCalls.push(patch); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(mergeCalled, false, 'mergePalette must NOT be called when extract returns []');
+  assert.equal(updateCalls.length, 0, 'updateProfile must NOT be called when extract returns []');
+});
+
+test('palette: all extracted tokens already in palette → updateProfile NOT called', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const existingPalette = ['navy', 'olive'];
+  const updateCalls = [];
+
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readProfile: async () => ({ palette: existingPalette }),
+    extractColors: () => ['navy'],
+    // Stubbed mergePalette returns the existing array unchanged (same length).
+    mergePalette: (existing, _incoming) => [...existing],
+    updateProfile: async (patch) => { updateCalls.push(patch); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(updateCalls.length, 0, 'updateProfile must NOT be called when merged length equals existing length');
+});
