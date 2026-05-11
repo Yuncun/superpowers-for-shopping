@@ -8,6 +8,8 @@ import {
   appendPurchase,
   appendThumbSignal,
   updateFrontmatter,
+  listPendingPurchases,
+  updatePurchase,
 } from '../lib/profile.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -309,4 +311,100 @@ test('writeProfile sanitizes newlines in cell values', async () => {
   assert.ok(!p.purchase_history[0].notes.includes('\n'));
   assert.ok(p.purchase_history[0].notes.includes('line1'));
   assert.ok(p.purchase_history[0].notes.includes('line2'));
+});
+
+// --- listPendingPurchases + updatePurchase ---
+
+test('listPendingPurchases returns [] on empty profile', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  const result = await listPendingPurchases();
+  assert.deepEqual(result, []);
+});
+
+test('listPendingPurchases returns one row after appending kept=?', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
+  const result = await listPendingPurchases();
+  assert.equal(result.length, 1);
+  assert.equal(result[0].kept, '?');
+  assert.equal(result[0].item, 'sweater');
+});
+
+test('listPendingPurchases ignores rows with kept=yes', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: 'yes', notes: '' });
+  const result = await listPendingPurchases();
+  assert.deepEqual(result, []);
+});
+
+test('updatePurchase matches by (date, item, brand) and sets kept=yes', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
+  const r = await updatePurchase(
+    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
+    { kept: 'yes' },
+  );
+  assert.deepEqual(r, { updated: true });
+  const p = await readProfile();
+  assert.equal(p.purchase_history[0].kept, 'yes');
+});
+
+test('updatePurchase updates notes when provided', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
+  await updatePurchase(
+    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
+    { kept: 'yes', notes: 'loved it' },
+  );
+  const p = await readProfile();
+  assert.equal(p.purchase_history[0].notes, 'loved it');
+});
+
+test('updatePurchase preserves existing notes when notes not provided', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: 'great fit' });
+  await updatePurchase(
+    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
+    { kept: 'no' },
+  );
+  const p = await readProfile();
+  assert.equal(p.purchase_history[0].notes, 'great fit');
+});
+
+test('updatePurchase returns not_found when no matching row', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  const r = await updatePurchase(
+    { date: '2026-05-10', item: 'nonexistent', brand: 'Nobody' },
+    { kept: 'yes' },
+  );
+  assert.deepEqual(r, { updated: false, reason: 'not_found' });
+  const p = await readProfile();
+  assert.equal(p.purchase_history.length, 0);
+});
+
+test('updatePurchase throws invalid_kept for bad kept value', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
+  await assert.rejects(
+    () => updatePurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' }, { kept: '?' }),
+    err => err.code === 'invalid_kept',
+  );
+  // Profile must be unchanged
+  const p = await readProfile();
+  assert.equal(p.purchase_history[0].kept, '?');
 });
