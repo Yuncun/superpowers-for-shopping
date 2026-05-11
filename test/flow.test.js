@@ -61,6 +61,7 @@ function baseDeps({ session, server, candidates = makeCandidates(3) } = {}) {
     sleep: async () => {},
     appendPurchase: async () => {},
     now: () => '2026-05-11',
+    applyRanking: (c) => c,
   };
 }
 
@@ -689,4 +690,50 @@ test('non-success outcomes do NOT call appendPurchase', async () => {
   }
 
   assert.equal(appendCalls.length, 0, 'appendPurchase must NOT be called on canceled or dismissed');
+});
+
+// ---------------------------------------------------------------------------
+// Plan 9: ranking integration
+// ---------------------------------------------------------------------------
+
+test('ranking: applyRanking is called with deduped candidates and the profile', async () => {
+  const candidates = makeCandidates(3);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const mockProfile = { brands_avoid: [], brands_love: [], budget_caps: {} };
+
+  let capturedCandidates;
+  let capturedProfile;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    readProfile: async () => mockProfile,
+    applyRanking: (c, p) => {
+      capturedCandidates = c;
+      capturedProfile = p;
+      return c; // identity — don't filter anything
+    },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.ok(capturedCandidates, 'applyRanking must have been called');
+  assert.equal(capturedCandidates.length, candidates.length, 'deduped candidates passed to applyRanking');
+  assert.equal(capturedProfile, mockProfile, 'profile passed to applyRanking');
+});
+
+test('ranking: empty applyRanking output returns no_results without starting server', async () => {
+  let startServerCalled = false;
+  const candidates = makeCandidates(8);
+  const deps = {
+    ...baseDeps({ candidates }),
+    applyRanking: () => [], // filter everything out
+    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'no_results');
+  assert.equal(startServerCalled, false, 'startServer must NOT be called when ranked result is empty');
 });
