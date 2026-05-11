@@ -26,21 +26,32 @@ function writeEvent(res, eventName, data) {
  * Start the local UI server.
  *
  * @param {object} [opts]
- * @param {number}   [opts.port=0]                 - 0 lets the OS pick.
- * @param {function} [opts.now=Date.now]            - injectable for tests.
- * @param {function} [opts.randomBytes]             - injectable for tests.
+ * @param {number}   [opts.port=0]                       - 0 lets the OS pick.
+ * @param {function} [opts.now=Date.now]                  - injectable for tests.
+ * @param {function} [opts.randomBytes]                   - injectable for tests.
+ * @param {number}   [opts.idleThresholdMs=5*60*1000]    - sessions idle longer than this are closed.
+ * @param {number}   [opts.idleSweepMs=60*1000]          - how often the sweep runs.
  * @returns {Promise<{baseUrl, createSession, getSession, shutdown}>}
  */
 export async function startServer({
   port = 0,
   now = Date.now,
   randomBytes = crypto.randomBytes,
+  idleThresholdMs = 5 * 60 * 1000,
+  idleSweepMs = 60 * 1000,
 } = {}) {
   const store = createStore({ now, randomBytes });
 
   // Regex: /r/<hex-id>  optionally followed by a sub-path.
   // Groups: [1] = id, [2] = sub-path (e.g. "/events", "/action", "/redirect") or undefined.
   const ROUTE_RE = /^\/r\/([0-9a-f]+)(\/[a-z]+)?$/;
+
+  // Idle-session cleanup loop. .unref() ensures the timer doesn't prevent Node
+  // from exiting naturally when the process is otherwise done.
+  const idleTimer = setInterval(
+    () => store.expireIdle({ thresholdMs: idleThresholdMs }),
+    idleSweepMs,
+  ).unref();
 
   let shuttingDown = false;
   // baseUrl is set after the server binds; referenced inside the request handler via closure.
@@ -288,6 +299,9 @@ export async function startServer({
   function shutdown() {
     if (shuttingDown) return Promise.resolve();
     shuttingDown = true;
+
+    // Stop the idle-sweep timer so it can't fire against a closed store.
+    clearInterval(idleTimer);
 
     // Close all sessions first so nextAction waiters reject with session_closed.
     for (const session of store.allSessions()) {

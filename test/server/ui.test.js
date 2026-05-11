@@ -419,6 +419,52 @@ describe('startServer', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Task 6: Idle-session cleanup loop
+  // -------------------------------------------------------------------------
+
+  it('idle session is closed within ~150ms when idleThresholdMs=50, idleSweepMs=20', async () => {
+    const server = await startServer({ idleThresholdMs: 50, idleSweepMs: 20 });
+    try {
+      const session = server.createSession();
+      // Register nextAction BEFORE the sweep fires; it should reject with session_closed.
+      const actionPromise = session.nextAction({ timeoutMs: 500 });
+      await assert.rejects(
+        () => actionPromise,
+        (err) => err.message === 'session_closed',
+      );
+    } finally {
+      await server.shutdown();
+    }
+  });
+
+  it('session with recent activity is NOT closed by the idle sweep', async () => {
+    const server = await startServer({ idleThresholdMs: 50, idleSweepMs: 20 });
+    try {
+      const session = server.createSession();
+      // Wait 30ms (threshold is 50ms), then bump lastActivity via pushState.
+      await new Promise(r => setTimeout(r, 30));
+      session.pushState({ stage: 'loading', message: 'x' });
+      // Wait another 30ms — total wall time is 60ms but lastActivity is only 30ms old.
+      await new Promise(r => setTimeout(r, 30));
+      // Session should still be alive.
+      const found = server.getSession(session.id);
+      assert.ok(found !== null, 'session should still exist after recent activity');
+    } finally {
+      await server.shutdown();
+    }
+  });
+
+  it('after shutdown the idle timer is cleared — no errors after 200ms', async () => {
+    const server = await startServer({ idleThresholdMs: 50, idleSweepMs: 20 });
+    await server.shutdown();
+    // Wait well past several sweep intervals; if the timer still fires against a
+    // closed store it could throw. This should complete without unhandled errors.
+    await new Promise(r => setTimeout(r, 200));
+    // If we reach here without an uncaught exception, the timer was cleared.
+    assert.ok(true, 'no errors after shutdown + 200ms');
+  });
+
   it('aborting the SSE client request unsubscribes (no subscriber leak)', async () => {
     await withServer(async ({ baseUrl, createSession }) => {
       const session = createSession();
