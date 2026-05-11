@@ -9,7 +9,8 @@
   },
   "bin": {
     "cart": "./bin/cart.js",
-    "cart-flow": "./bin/cart-flow.js"
+    "cart-flow": "./bin/cart-flow.js",
+    "retailers": "./bin/retailers.js"
   },
   "scripts": {
     "test": "node --test 'test/**/*.test.js'",
