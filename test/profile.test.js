@@ -193,6 +193,44 @@ test('writeProfile sanitizes pipe characters in cell values', async () => {
   assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
 });
 
+test('readProfile preserves last_setup as a string', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await fs.mkdir(path.join(tmp, '.claude/cart'), { recursive: true });
+  await fs.writeFile(path.join(tmp, '.claude/cart/profile.md'), `---
+sizes: {}
+budget_default: mid
+budget_caps: {}
+palette: []
+brands_love: []
+brands_avoid: []
+fit_notes: {}
+moodboard_url: ""
+last_setup: 2026-05-10
+---
+
+# Purchase history
+| date | item | brand | $ | kept | notes |
+|---|---|---|---|---|---|
+
+# Thumb signals
+| date | category | up | down |
+|---|---|---|---|
+`);
+  const p = await readProfile();
+  assert.equal(typeof p.last_setup, 'string', 'last_setup must stay a string, not a Date');
+  assert.equal(p.last_setup, '2026-05-10');
+});
+
+test('writeProfile + readProfile preserves last_setup format', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile({ ...getDefaultProfile(), last_setup: '2026-05-10' });
+  const raw = await fs.readFile(path.join(tmp, '.claude/cart/profile.md'), 'utf8');
+  assert.ok(raw.includes('last_setup: '));
+  assert.ok(!raw.includes('T00:00:00'), 'ISO date should not get expanded to full datetime');
+});
+
 test('parseTable tolerates rows without trailing pipe', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
   process.env.HOME = tmp;
