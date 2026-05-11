@@ -11,7 +11,8 @@
     "cart": "./bin/cart.js"
   },
   "scripts": {
-    "test": "node --test 'test/**/*.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "smoke:live": "node test/live-marinelayer.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
