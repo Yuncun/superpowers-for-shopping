@@ -2,7 +2,7 @@
 
 An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.7.0 — login is now handled in-flow. When `/cart` hits an unauthenticated retailer, the UI prompts you to log in and resumes after you click "I'm logged in, retry." `/cart-retailers login <host>` opens a retailer's login page for pre-authentication. Plan 8 adds feedback loops and ranking heuristics. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
+**Status:** v0.8.0 — purchases now feed back into your profile. Successful `/cart` flows record a pending purchase; `/cart-feedback` walks you through marking them kept or returned. A SessionStart hook nudges you when items are 7+ days old and still pending. Plan 9 adds ranking heuristics and `/cart-rule`. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
 
 ## Scope
 

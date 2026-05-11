@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0 — 2026-05-11
+
+Purchase feedback loop. Successful `/cart` flows record a pending row in
+`profile.purchase_history`; `/cart-feedback` walks the user through marking
+each kept or returned.
+
+- `lib/profile.js`: + `listPendingPurchases`, `updatePurchase`.
+- `bin/cart.js`: + `list-pending`, `feedback` subcommands.
+- `runCartFlow` writes `{kept: '?'}` row on success.
+- New `commands/cart-feedback.md` LLM wizard.
+- New `hooks/session-start.sh` + `bin/cart-pending-check.js` nudge the
+  user when items have been pending 7+ days.
+
+v0.8.0 deferrals (Plan 9):
+- No `/cart-rule` for promoting learned signals to hard rules.
+- No ranking heuristics — still naive top-N by thumb count and listing order.
+- No clarifying questions before search.
+
 ## 0.7.0 — 2026-05-11
 
 In-flow login retry. No more bouncing out of `/cart` when a retailer
