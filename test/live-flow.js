@@ -14,12 +14,12 @@ import { runCartFlow } from '../lib/flow.js';
 const query = process.argv[2] ?? 'sweater';
 
 function openUrl(url) {
+  process.stderr.write(`UI URL: ${url}\n`);
   if (process.platform === 'darwin') {
     return new Promise((resolve, reject) => {
       execFile('open', [url], (err) => (err ? reject(err) : resolve()));
     });
   }
-  process.stderr.write(`Open this URL: ${url}\n`);
 }
 
 function log(msg) {
