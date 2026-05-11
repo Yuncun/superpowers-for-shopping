@@ -152,3 +152,24 @@ test('appendThumbSignal adds a row to thumb_signals', async () => {
   assert.equal(p.thumb_signals.length, 1);
   assert.equal(p.thumb_signals[0].up, 'ribbed crew');
 });
+
+import { updateFrontmatter } from '../lib/profile.js';
+
+test('updateFrontmatter merges shallow fields', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile({ ...getDefaultProfile(), brands_avoid: ['Shein'] });
+  await updateFrontmatter({ brands_avoid: ['Shein', 'Temu'] });
+  const p = await readProfile();
+  assert.deepEqual(p.brands_avoid, ['Shein', 'Temu']);
+});
+
+test('updateFrontmatter deep-merges fit_notes', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile({ ...getDefaultProfile(), fit_notes: { sweater: 'relaxed' } });
+  await updateFrontmatter({ fit_notes: { pants: 'tapered' } });
+  const p = await readProfile();
+  assert.equal(p.fit_notes.sweater, 'relaxed');
+  assert.equal(p.fit_notes.pants, 'tapered');
+});
