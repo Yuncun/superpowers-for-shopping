@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.0 — 2026-05-11
+
+In-flow login retry. No more bouncing out of `/cart` when a retailer
+session is missing or expired.
+
+- New UI stage `login_required` rendered as a single-button "Almost
+  there" card with the host name.
+- `runCartFlow` retries `addToCart` once after the user signals
+  `login_complete`. Second failure exits with `auth_required`.
+- `openLoginPage` fires in the background (not awaited) so the user
+  sees the UI prompt instantly.
+- New `/cart-retailers login <host>` subcommand opens the retailer's
+  login page for pre-authentication.
+
+v0.7.0 deferrals (Plan 8):
+- No `/cart-feedback` for marking purchases kept/returned.
+- No SessionStart hook nudging about old purchases.
+- No `/cart-rule` for promoting learned signals to hard rules.
+- No ranking heuristics (still naive top-N by listing order).
+
 ## 0.6.0 — 2026-05-11
 
 Adds retailer management. `/cart` no longer hardcoded to one store —
