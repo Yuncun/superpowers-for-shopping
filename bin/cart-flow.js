@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { readProfile } from '../lib/profile.js';
 import { readRetailers } from '../lib/retailers-store.js';
 import { search, addToCart } from '../lib/retailers/shopify.js';
-import { getCookieHeader } from '../lib/browser.js';
+import { getCookieHeader, openLoginPage } from '../lib/browser.js';
 import { startServer } from '../server/ui.js';
 import { runCartFlow } from '../lib/flow.js';
 
@@ -37,7 +37,7 @@ function sleep(ms) {
 async function main() {
   const result = await runCartFlow({
     query,
-    deps: { readProfile, readRetailers, search, getCookieHeader, addToCart, startServer, openUrl, log, sleep },
+    deps: { readProfile, readRetailers, search, getCookieHeader, addToCart, startServer, openUrl, openLoginPage, log, sleep },
   });
 
   switch (result.outcome) {
