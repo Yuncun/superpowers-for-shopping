@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.1 — 2026-05-11
+
+Hotfix from the first real `/cart` run.
+
+- `runCartFlow` now uses `Promise.allSettled` for the retailer search
+  fan-out. A single failing retailer is logged and skipped instead of
+  taking down the whole flow.
+- Removed `mejuri.com` from `getDefaultRetailers()` — it sets Shopify
+  markers on its homepage but blocks `/products.json` behind a redirect.
+  Users with the old default in their `retailers.md` can clean up via
+  `/cart-retailers remove mejuri.com`; the resilience fix keeps it
+  harmless if they don't.
+
 ## 0.9.0 — 2026-05-11
 
 Ranking heuristics + the `/cart-rule` wizard. The profile data the user
