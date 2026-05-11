@@ -1,7 +1,7 @@
 // test/browser.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser } from '../lib/browser.js';
+import { closeBrowser, openLoginPage } from '../lib/browser.js';
 import { browserProfilePath } from '../lib/paths.js';
 
 function mockExec(routes) {
@@ -94,4 +94,57 @@ test('runAgentBrowser preserves caller-supplied --profile (does not double-add)'
   await closeBrowser({ execImpl });
   const profileFlagCount = seenArgs.filter((a) => a === '--profile').length;
   assert.equal(profileFlagCount, 1, `expected exactly one --profile flag, got ${profileFlagCount}: ${seenArgs.join(' ')}`);
+});
+
+test('openLoginPage navigates to https://<host>/', async () => {
+  let seenArgs;
+  const execImpl = async (file, args) => {
+    seenArgs = args;
+    return { stdout: JSON.stringify({ success: true, data: null, error: null }), stderr: '' };
+  };
+  await openLoginPage('marinelayer.com', { execImpl });
+  assert.ok(seenArgs.includes('open'), 'expected "open" in args');
+  assert.ok(seenArgs.includes('https://marinelayer.com/'), `expected URL in args, got ${seenArgs.join(' ')}`);
+});
+
+test('openLoginPage normalizes host (strips protocol, path, lowercases)', async () => {
+  let seenArgs;
+  const execImpl = async (file, args) => {
+    seenArgs = args;
+    return { stdout: JSON.stringify({ success: true, data: null, error: null }), stderr: '' };
+  };
+  await openLoginPage('HTTPS://MarineLayer.com/products/x', { execImpl });
+  assert.ok(seenArgs.includes('https://marinelayer.com/'));
+});
+
+test('openLoginPage throws invalid_host on bad input', async () => {
+  for (const bad of ['', null, undefined, 'localhost', '   ']) {
+    await assert.rejects(
+      () => openLoginPage(bad, { execImpl: async () => ({ stdout: '{}', stderr: '' }) }),
+      (err) => err.code === 'invalid_host',
+      `expected invalid_host for ${JSON.stringify(bad)}`
+    );
+  }
+});
+
+test('openLoginPage propagates browser_unavailable', async () => {
+  const enoent = new Error('spawn agent-browser ENOENT');
+  enoent.code = 'ENOENT';
+  const execImpl = async () => { throw enoent; };
+  await assert.rejects(
+    () => openLoginPage('marinelayer.com', { execImpl }),
+    (err) => err.code === 'browser_unavailable'
+  );
+});
+
+test('openLoginPage propagates browser_failed when agent-browser reports failure', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} open https://marinelayer.com/`]: {
+      stdout: { success: false, data: null, error: 'navigation timeout' },
+    },
+  });
+  await assert.rejects(
+    () => openLoginPage('marinelayer.com', { execImpl }),
+    (err) => err.code === 'browser_failed' && err.message.includes('navigation timeout')
+  );
 });
