@@ -42,11 +42,16 @@ test('httpGetJson throws invalid_json when content-type lies', async () => {
   );
 });
 
-test('httpGetJson wraps network errors as network_error', async () => {
+test('httpGetJson wraps network errors as network_error with URL in message', async () => {
   const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
   await assert.rejects(
-    () => httpGetJson('https://example.com/x', { fetchImpl }),
-    (err) => err.code === 'network_error' && err.message.includes('ECONNREFUSED')
+    () => httpGetJson('https://example.com/x?token=secret', { fetchImpl }),
+    (err) =>
+      err.code === 'network_error'
+      && err.message.includes('ECONNREFUSED')
+      && err.message.includes('example.com')
+      && !err.message.includes('secret')
+      && err.url === 'https://example.com/x'
   );
 });
 
