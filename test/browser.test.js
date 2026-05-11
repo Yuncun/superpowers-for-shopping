@@ -1,7 +1,7 @@
 // test/browser.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, openLoginPage } from '../lib/browser.js';
+import { closeBrowser, openLoginPage, getCookieHeader } from '../lib/browser.js';
 import { browserProfilePath } from '../lib/paths.js';
 
 function mockExec(routes) {
@@ -147,4 +147,110 @@ test('openLoginPage propagates browser_failed when agent-browser reports failure
     () => openLoginPage('marinelayer.com', { execImpl }),
     (err) => err.code === 'browser_failed' && err.message.includes('navigation timeout')
   );
+});
+
+function cookiesPayload(...cookies) {
+  return { success: true, data: { cookies }, error: null };
+}
+
+test('getCookieHeader returns name=value pairs joined by "; "', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload(
+        { name: 'cart', value: 'abc123', domain: 'marinelayer.com' },
+        { name: '_shopify_y', value: 'def456', domain: '.marinelayer.com' }
+      ),
+    },
+  });
+  const cookie = await getCookieHeader('marinelayer.com', { execImpl });
+  assert.equal(cookie, '_shopify_y=def456; cart=abc123');
+});
+
+test('getCookieHeader returns null when no cookies match', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 'x', value: 'y', domain: 'other.com' }),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), null);
+});
+
+test('getCookieHeader returns null when cookies array is empty', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload(),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), null);
+});
+
+test('getCookieHeader matches leading-dot domain (.marinelayer.com applies to marinelayer.com)', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 'session', value: 'xyz', domain: '.marinelayer.com' }),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), 'session=xyz');
+});
+
+test('getCookieHeader matches when host is a subdomain of cookie domain', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 'session', value: 'xyz', domain: 'marinelayer.com' }),
+    },
+  });
+  assert.equal(await getCookieHeader('shop.marinelayer.com', { execImpl }), 'session=xyz');
+});
+
+test('getCookieHeader does NOT match unrelated domain', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 'session', value: 'xyz', domain: 'evilmarinelayer.com' }),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), null);
+});
+
+test('getCookieHeader is deterministic (sorted by name)', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload(
+        { name: 'zeta', value: '1', domain: 'marinelayer.com' },
+        { name: 'alpha', value: '2', domain: 'marinelayer.com' },
+        { name: 'beta', value: '3', domain: 'marinelayer.com' }
+      ),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), 'alpha=2; beta=3; zeta=1');
+});
+
+test('getCookieHeader throws invalid_host on bad input', async () => {
+  await assert.rejects(
+    () => getCookieHeader('', { execImpl: async () => ({ stdout: '{}', stderr: '' }) }),
+    (err) => err.code === 'invalid_host'
+  );
+});
+
+test('getCookieHeader propagates browser_failed when cookies get fails', async () => {
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: { success: false, data: null, error: 'no active page' },
+    },
+  });
+  await assert.rejects(
+    () => getCookieHeader('marinelayer.com', { execImpl }),
+    (err) => err.code === 'browser_failed'
+  );
+});
+
+test('getCookieHeader handles cookie values that contain special chars (no over-encoding)', async () => {
+  // Cookie header spec says values can contain any printable ASCII except control chars,
+  // double-quote, comma, semicolon, backslash. We trust agent-browser to return values
+  // that are already valid; we do NOT URL-encode them (browsers send raw values).
+  const execImpl = mockExec({
+    [`agent-browser --profile ${browserProfilePath()} cookies get --json`]: {
+      stdout: cookiesPayload({ name: 'sid', value: 'abc%3D%2F', domain: 'marinelayer.com' }),
+    },
+  });
+  assert.equal(await getCookieHeader('marinelayer.com', { execImpl }), 'sid=abc%3D%2F');
 });
