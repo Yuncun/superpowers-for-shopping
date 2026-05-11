@@ -3,7 +3,7 @@
 import {
   readProfile, writeProfile, getDefaultProfile,
   appendPurchase, appendThumbSignal, validateProfile,
-  mergeFrontmatter,
+  mergeFrontmatter, listPendingPurchases, updatePurchase,
 } from '../lib/profile.js';
 
 const [, , cmd, ...args] = process.argv;
@@ -61,6 +61,29 @@ async function cmdAppendPurchase(json) {
   await appendPurchase(JSON.parse(json));
 }
 
+async function cmdListPending() {
+  const rows = await listPendingPurchases();
+  for (const row of rows) {
+    console.log(JSON.stringify(row));
+  }
+}
+
+async function cmdFeedback([date, item, brand, kept, notes]) {
+  let result;
+  try {
+    result = await updatePurchase({ date, item, brand }, { kept, notes });
+  } catch (err) {
+    console.error(`error=${err.code ?? err.message}`);
+    process.exit(1);
+  }
+  if (result.updated) {
+    console.log(`updated=yes`);
+  } else {
+    console.error(`error=${result.reason}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   switch (cmd) {
     case 'init':            await cmdInit(); break;
@@ -68,8 +91,10 @@ async function main() {
     case 'set':             await cmdSet(args); break;
     case 'append-thumb':    await cmdAppendThumb(args[0]); break;
     case 'append-purchase': await cmdAppendPurchase(args[0]); break;
+    case 'list-pending':    await cmdListPending(); break;
+    case 'feedback':        await cmdFeedback(args); break;
     default:
-      console.error(`Usage: cart <init|show|set|append-thumb|append-purchase> [...]`);
+      console.error(`Usage: cart <init|show|set|append-thumb|append-purchase|list-pending|feedback> [...]`);
       process.exit(1);
   }
 }
