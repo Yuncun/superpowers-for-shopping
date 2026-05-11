@@ -1,5 +1,7 @@
 # Plan 1 — Profile Data Layer + `/cart-setup`
 
+> **Status: shipped, but this doc has drifted from the as-shipped code.** Final implementation differs from this plan — see commits `8f28857..507b013` for what actually shipped. Drift happened in Tasks 4, 5, 8, 9 and an unplanned Task 8.5 (hardening) was added during execution to fix data-corruption bugs the original code blocks would have caused. Do NOT re-execute this plan from scratch; refer to `2026-05-10-plan-1-profile-as-shipped.md` for the canonical record of what ships in v0.1.0. This doc remains as a record of original intent and the decomposition we used.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Working profile read/write library plus a `/cart-setup` slash command. After Plan 1, the user can run `/cart-setup` in any Claude Code session, answer a few questions, and have a profile written to `~/.claude/cart/profile.md` that subsequent plans will read.
