@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 — 2026-05-11
+
+Adds retailer management. `/cart` no longer hardcoded to one store —
+searches every retailer in your list in parallel.
+
+- New `lib/retailers-store.js`: read/write `~/.claude/cart/retailers.md`.
+  Auto-creates with 4 default Shopify stores (marinelayer, allbirds,
+  everlane, mejuri) if missing.
+- New `bin/retailers.js` + `/cart-retailers list|add|remove` slash command.
+- `runCartFlow` reads retailers from the store when no explicit list is
+  passed. `bin/cart-flow.js` drops its hardcoded array.
+- `add` validates a host is Shopify-detected before adding. Tier-1
+  retailers and non-Shopify sites are rejected with a clear error.
+
+v0.6.0 deferrals (Plan 7):
+- No `/cart-retailers login` — login is still handled out-of-band via
+  `npm run smoke:browser`.
+- No in-flow login retry — `auth_required` still exits the flow.
+
 ## 0.5.0 — 2026-05-11
 
 The first user-facing release. Composes Plans 1-4 into the end-to-end
