@@ -2,7 +2,7 @@
 
 An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.9.0 — profile data now shapes search results. `brands_avoid` drops banned stores, `brands_love` reorders favorites to the front, `budget_caps.clothes` filters by price. `/cart-rule "<natural language>"` promotes a preference to a hard rule. v0.9.0 closes out the v1 roadmap. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
+**Status:** v0.10.0 — `/cart-setup` is now a brief brainstorm rather than an 8-question survey. Opens with one free-form prompt, extracts what it can, fills only the gaps with preset-backed questions. Drops the palette question; palette is learned passively from thumb-accept signals in `/cart`.
 
 ## Scope
 

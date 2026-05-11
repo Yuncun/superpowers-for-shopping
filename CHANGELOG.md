@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.0 — 2026-05-11
+
+`/cart-setup` UX overhaul. The wizard now opens with one free-form prompt,
+extracts what it can parse, then targets gap-fill questions only at the
+fields that didn't come out of extraction. Final diff + confirm before any
+write — no more eight-message linear survey.
+
+- Rewrote `commands/cart-setup.md` as a six-section hybrid flow.
+- Dropped the palette question. It was a poor proxy for taste (asking
+  someone's favorite single color doesn't predict what they actually buy).
+- New `lib/palette-extractor.js`: extracts color tokens from a product's
+  variant color field or title, falling back to a curated 40-item color
+  vocabulary.
+- `runCartFlow` now learns the palette passively. On final accept, the
+  picked product's colors are merged into `profile.palette` (case-insensitive
+  dedup, capped at 8 entries).
+
+Open spec items still deferred (no change from v0.9.0): Tier-1 handlers,
+aesthetic variance ranking, Pinterest moodboard ingestion, virtual try-on,
+cross-retailer dedup, affiliate links, gift mode.
+
 ## 0.9.2 — 2026-05-11
 
 Map `session_closed` errors (from idle cleanup or external close) to a
