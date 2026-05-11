@@ -2,7 +2,7 @@
 
 An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.4.0 — profile, Shopify handler, browser-session library, and local UI server. Slash command (Plan 5) is the next milestone. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
+**Status:** v0.5.0 — the `/cart` flow ships end-to-end against marinelayer.com. Type `/cart "I need a sweater"` to try it. Plan 6 adds multi-retailer + in-flow login. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
 
 ## Scope
 

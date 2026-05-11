@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0 — 2026-05-11
+
+The first user-facing release. Composes Plans 1-4 into the end-to-end
+`/cart "<query>"` flow.
+
+- New `lib/flow.js`: pure orchestrator with structured-outcome return.
+  Handles success / no_results / canceled / dismissed / auth_required /
+  cart_error paths. Every dependency injected for testability. Dedupes
+  candidates by URL.
+- New `bin/cart-flow.js`: CLI wiring real `search`, browser cookies,
+  `addToCart`, UI server. Auto-opens the UI in the user's default browser
+  on macOS.
+- New `commands/cart.md`: the slash command itself.
+- New `npm run smoke:flow` exercises the full path with `addToCart` mocked
+  (so we don't litter a real Shopify cart). Live-validated against
+  marinelayer.com — flow correctly transitioned loading → thumbs → final →
+  auth_required when no logged-in session was present.
+
+v0.5.0 scope cuts (Plan 6 picks these up):
+- Single retailer hardcoded (marinelayer.com). No `retailers.md` reading.
+- Naive top-1 ranking by thumbs-up count, no profile filter.
+- No "see alternatives" handling in the orchestrator (UI button exists but
+  action is unhandled — clicking it leaves the user on the final card).
+- No in-flow login retry — `auth_required` exits with guidance to run
+  `npm run smoke:browser` first.
+- No clarifying questions (budget/occasion).
+
 ## 0.4.0 — 2026-05-10
 
 Adds the local web UI server. Pure-Node HTTP + Server-Sent Events, no external
