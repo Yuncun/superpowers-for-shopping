@@ -118,3 +118,37 @@ test('validateProfile flags non-array palette', () => {
   assert.equal(r.valid, false);
   assert.ok(r.errors.some(e => e.includes('palette')));
 });
+
+import { appendPurchase, appendThumbSignal } from '../lib/profile.js';
+
+test('appendPurchase adds a row to purchase_history', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendPurchase({
+    date: '2026-05-10',
+    item: 'sweater',
+    brand: 'Marine Layer',
+    $: '98',
+    kept: '?',
+    notes: 'navy crew',
+  });
+  const p = await readProfile();
+  assert.equal(p.purchase_history.length, 1);
+  assert.equal(p.purchase_history[0].brand, 'Marine Layer');
+});
+
+test('appendThumbSignal adds a row to thumb_signals', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile(getDefaultProfile());
+  await appendThumbSignal({
+    date: '2026-05-10',
+    category: 'sweater',
+    up: 'ribbed crew',
+    down: 'oversized',
+  });
+  const p = await readProfile();
+  assert.equal(p.thumb_signals.length, 1);
+  assert.equal(p.thumb_signals[0].up, 'ribbed crew');
+});
