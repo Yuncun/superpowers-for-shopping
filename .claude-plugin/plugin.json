@@ -1,6 +1,6 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ADHD-helper for considered purchases. Takes 'I need a sweater' to a populated cart with one click.",
   "author": {
     "name": "Eric Shen"

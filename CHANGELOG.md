@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0 — 2026-05-10
+
+Adds the browser-session library. Pure Node wrapping the `agent-browser` CLI
+with dependency-injected exec for mock-tested unit coverage plus a manual
+smoke script that drives a real browser.
+
+- New `lib/browser.js`: `openLoginPage`, `getCookieHeader`, `isLoggedIn`,
+  `closeBrowser`. Persistent profile at `~/.claude/cart/browser-profile/`.
+- New `lib/host.js`: shared `normalizeHost` extracted from `lib/retailers/shopify.js`.
+- New `npm run smoke:browser` for manual end-to-end login verification, validated
+  live against marinelayer.com.
+
+Live-smoke findings folded in:
+- `runAgentBrowser` always passes `--json` (agent-browser defaults to
+  human-readable output).
+- `isLoggedIn` is a best-effort heuristic — Plan 5's `addToCart` is the
+  authoritative auth check.
+
+Not yet wired up: the `/cart` flow (Plan 5) is what calls these.
+
 ## 0.2.0 — 2026-05-10
 
 Adds the generic Shopify Tier-2 retailer handler library. Pure-Node, dependency-injected
