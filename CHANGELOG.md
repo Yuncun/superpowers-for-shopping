@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.0 — 2026-05-11
+
+Ranking heuristics + the `/cart-rule` wizard. The profile data the user
+has been entering since v0.1.0 finally gets used.
+
+- New `lib/ranking.js`: `applyRanking(candidates, profile)` drops banned
+  brands and over-budget items, reorders loved brands to the front.
+- `runCartFlow` wires ranking into the pipeline after dedup, before
+  taking the top 8.
+- New `commands/cart-rule.md` LLM wizard. Translates "stop suggesting
+  cropped fits" or "never show me Shein" into a structured profile
+  update, shows the diff, writes via the existing `cart set` subcommand.
+
+This closes the v1 roadmap. The plugin now does what the original spec
+described: profile setup, multi-retailer Shopify search, browser session,
+visual narrowing UI, in-flow login retry, purchase feedback loop, and
+profile-driven ranking.
+
+Open spec items deferred to a v2 roadmap:
+- Tier-1 custom handlers (Amazon, IKEA, Uniqlo, West Elm).
+- Aesthetic variance ranking (Plan 9 has hard filters but no spread).
+- Pinterest moodboard ingestion.
+- Virtual try-on.
+- Cross-retailer dedup beyond identical-URL.
+- Affiliate links.
+- Gift mode.
+
 ## 0.8.0 — 2026-05-11
 
 Purchase feedback loop. Successful `/cart` flows record a pending row in

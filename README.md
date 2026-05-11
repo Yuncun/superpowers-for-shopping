@@ -2,7 +2,7 @@
 
 An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.8.0 — purchases now feed back into your profile. Successful `/cart` flows record a pending purchase; `/cart-feedback` walks you through marking them kept or returned. A SessionStart hook nudges you when items are 7+ days old and still pending. Plan 9 adds ranking heuristics and `/cart-rule`. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
+**Status:** v0.9.0 — profile data now shapes search results. `brands_avoid` drops banned stores, `brands_love` reorders favorites to the front, `budget_caps.clothes` filters by price. `/cart-rule "<natural language>"` promotes a preference to a hard rule. v0.9.0 closes out the v1 roadmap. Design spec at [`docs/specs/2026-05-10-superpowers-for-shopping-design.md`](docs/specs/2026-05-10-superpowers-for-shopping-design.md).
 
 ## Scope
 
