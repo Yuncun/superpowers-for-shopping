@@ -286,6 +286,139 @@ describe('startServer', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Task 5: POST /r/<id>/action + GET /r/<id>/redirect
+  // -------------------------------------------------------------------------
+
+  it('POST /action with valid body returns 204', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'thumbs_complete' }),
+      });
+      assert.equal(res.status, 204);
+    });
+  });
+
+  it('POST /action records the action and nextAction resolves with it', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+
+      const actionPromise = session.nextAction();
+
+      await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'final_accept' }),
+      });
+
+      const action = await actionPromise;
+      assert.equal(action.type, 'final_accept');
+    });
+  });
+
+  it('POST /action with wrong token returns 401', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=wrongtoken`;
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'thumb' }),
+      });
+      assert.equal(res.status, 401);
+    });
+  });
+
+  it('POST /action to unknown id returns 404', async () => {
+    await withServer(async ({ baseUrl }) => {
+      const res = await fetch(`${baseUrl}/r/deadbeefdeadbeef/action?token=x`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'thumb' }),
+      });
+      assert.equal(res.status, 404);
+    });
+  });
+
+  it('POST /action with body > 16KB returns 413', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+      const bigBody = JSON.stringify({ type: 'thumb', data: 'x'.repeat(17000) });
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: bigBody,
+      });
+      assert.equal(res.status, 413);
+    });
+  });
+
+  it('POST /action with non-JSON body returns 400', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: 'not json at all',
+      });
+      assert.equal(res.status, 400);
+    });
+  });
+
+  it('POST /action with missing type returns 400', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: 'no type field' }),
+      });
+      assert.equal(res.status, 400);
+    });
+  });
+
+  it('POST /action with type not a string returns 400', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const actionUrl = `${baseUrl}/r/${session.id}/action?token=${session.token}`;
+      const res = await fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 42 }),
+      });
+      assert.equal(res.status, 400);
+    });
+  });
+
+  it('GET /redirect with https URL returns 302 with Location', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const target = 'https://example.com/cart?item=123';
+      const redirectUrl = `${baseUrl}/r/${session.id}/redirect?token=${session.token}&url=${encodeURIComponent(target)}`;
+      const res = await fetch(redirectUrl, { redirect: 'manual' });
+      assert.equal(res.status, 302);
+      assert.equal(res.headers.get('location'), target);
+    });
+  });
+
+  it('GET /redirect with javascript: URL returns 400', async () => {
+    await withServer(async ({ baseUrl, createSession }) => {
+      const session = createSession();
+      const badUrl = 'javascript:alert(1)';
+      const redirectUrl = `${baseUrl}/r/${session.id}/redirect?token=${session.token}&url=${encodeURIComponent(badUrl)}`;
+      const res = await fetch(redirectUrl);
+      assert.equal(res.status, 400);
+    });
+  });
+
   it('aborting the SSE client request unsubscribes (no subscriber leak)', async () => {
     await withServer(async ({ baseUrl, createSession }) => {
       const session = createSession();
