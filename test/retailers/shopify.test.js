@@ -344,3 +344,101 @@ test('fetchVariants: handles product with no variants (returns [])', async () =>
   });
   assert.deepEqual(await fetchVariants('https://marinelayer.com/products/empty', { fetchImpl }), []);
 });
+
+import { addToCart } from '../../lib/retailers/shopify.js';
+
+test('addToCart: returns ok on 200', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { body: { id: 1001, quantity: 1 } },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'sess=abc', fetchImpl });
+  assert.deepEqual(result, { ok: true });
+});
+
+test('addToCart: sends id + quantity in body and Cookie header', async () => {
+  let seenInit;
+  const fetchImpl = async (url, init) => { seenInit = init; return makeResponse({ body: {} }); };
+  await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'sess=abc', fetchImpl });
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.headers.Cookie, 'sess=abc');
+  assert.deepEqual(JSON.parse(seenInit.body), { id: 1001, quantity: 1 });
+});
+
+test('addToCart: coerces string variantId to integer', async () => {
+  let seenInit;
+  const fetchImpl = async (url, init) => { seenInit = init; return makeResponse({ body: {} }); };
+  await addToCart({ host: 'marinelayer.com', variantId: '1001', cookie: 'sess=abc', fetchImpl });
+  assert.equal(JSON.parse(seenInit.body).id, 1001);
+});
+
+test('addToCart: maps 422 to out_of_stock', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { status: 422, body: { description: 'Out of stock' } },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'sess=abc', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'out_of_stock' });
+});
+
+test('addToCart: maps HTML response (login page) to authentication_required', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { body: '<html>login</html>', contentType: 'text/html' },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'expired', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'authentication_required' });
+});
+
+test('addToCart: maps 401 to authentication_required', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { status: 401, body: 'Unauthorized', contentType: 'text/plain' },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'expired', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'authentication_required' });
+});
+
+test('addToCart: maps 403 to authentication_required', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { status: 403, body: 'Forbidden', contentType: 'text/plain' },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'expired', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'authentication_required' });
+});
+
+test('addToCart: maps other 5xx to http_<status>', async () => {
+  const fetchImpl = mockFetch({
+    'https://marinelayer.com/cart/add.js': { status: 500, body: 'oops', contentType: 'text/plain' },
+  });
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'sess=abc', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'http_500' });
+});
+
+test('addToCart: maps network failure to network', async () => {
+  const fetchImpl = async () => { throw new Error('ECONNRESET'); };
+  const result = await addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: 'sess=abc', fetchImpl });
+  assert.deepEqual(result, { ok: false, error: 'network' });
+});
+
+test('addToCart: throws invalid_variant_id on non-numeric', async () => {
+  for (const bad of [null, undefined, '', 'abc', NaN, {}, []]) {
+    await assert.rejects(
+      () => addToCart({ host: 'marinelayer.com', variantId: bad, cookie: 'sess=abc', fetchImpl: async () => ({}) }),
+      (err) => err.code === 'invalid_variant_id',
+      `expected invalid_variant_id for ${JSON.stringify(bad)}`
+    );
+  }
+});
+
+test('addToCart: throws invalid_cookie on empty cookie', async () => {
+  for (const bad of [null, undefined, '', '   ']) {
+    await assert.rejects(
+      () => addToCart({ host: 'marinelayer.com', variantId: 1001, cookie: bad, fetchImpl: async () => ({}) }),
+      (err) => err.code === 'invalid_cookie'
+    );
+  }
+});
+
+test('addToCart: throws invalid_host on bad host', async () => {
+  await assert.rejects(
+    () => addToCart({ host: '', variantId: 1001, cookie: 'sess=abc', fetchImpl: async () => ({}) }),
+    (err) => err.code === 'invalid_host'
+  );
+});
