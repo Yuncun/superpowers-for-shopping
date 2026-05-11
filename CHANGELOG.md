@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 — 2026-05-11
+
+Map `session_closed` errors (from idle cleanup or external close) to a
+graceful `{outcome: 'dismissed'}` instead of surfacing as a flow_error.
+This was masking the real "user walked away" case as a crash.
+
 ## 0.9.1 — 2026-05-11
 
 Hotfix from the first real `/cart` run.

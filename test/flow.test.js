@@ -81,6 +81,26 @@ test('no_results: returns no_results when all searches return empty', async () =
   assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
 });
 
+test('resilience: session_closed during nextAction maps to dismissed outcome', async () => {
+  // Simulate idle-cleanup or external close: nextAction rejects with session_closed.
+  const session = {
+    pushed: [],
+    url: 'http://127.0.0.1:9999/r/abc?token=def',
+    pushState: function(s) { this.pushed.push(s); },
+    nextAction: async () => { const e = new Error('session_closed'); throw e; },
+    close: () => {},
+  };
+  const server = mockServer(session);
+  const okCandidate = { brand: 'B', title: 't', price: '50', image: null, url: 'https://ok.com/products/x', variants: [{variant_id: 1, in_stock: true, size: 'M', color: 'navy'}] };
+  const deps = {
+    ...baseDeps(),
+    search: async () => [okCandidate],
+    startServer: async () => server,
+  };
+  const result = await runCartFlow({ query: 'sweater', retailers: ['ok.com'], deps });
+  assert.equal(result.outcome, 'dismissed');
+});
+
 test('resilience: a failing retailer search does not block successful ones', async () => {
   const okCandidate = { brand: 'B', title: 't', price: '50', image: null, url: 'https://ok.com/products/x', variants: [{variant_id: 1, in_stock: true, size: 'M', color: 'navy'}] };
   const logged = [];
