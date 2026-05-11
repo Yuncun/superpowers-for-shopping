@@ -193,6 +193,15 @@ test('writeProfile sanitizes pipe characters in cell values', async () => {
   assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
 });
 
+test('updateFrontmatter handles null target correctly', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
+  process.env.HOME = tmp;
+  await writeProfile({ ...getDefaultProfile(), fit_notes: null });
+  await updateFrontmatter({ fit_notes: { sweater: 'relaxed' } });
+  const p = await readProfile();
+  assert.deepEqual(p.fit_notes, { sweater: 'relaxed' }, 'null target should be replaced, not merged');
+});
+
 test('readProfile throws a helpful error when YAML is malformed', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
   process.env.HOME = tmp;
