@@ -269,11 +269,12 @@ test('shutdown is called on every exit path', async () => {
 // Task 2: auth + cart error paths
 // ---------------------------------------------------------------------------
 
-test('auth_required when getCookieHeader returns null', async () => {
+test('dismissed when getCookieHeader returns null and user dismisses login prompt', async () => {
   const candidates = makeCandidates(2);
   const session = mockSession({ actions: [
     { type: 'thumbs_complete' },
     { type: 'final_accept' },
+    { type: 'dismissed' },
   ]});
   const server = mockServer(session);
   let addToCartCalled = false;
@@ -281,31 +282,32 @@ test('auth_required when getCookieHeader returns null', async () => {
     ...baseDeps({ session, server, candidates }),
     getCookieHeader: async () => null,
     addToCart: async () => { addToCartCalled = true; return { ok: true }; },
+    openLoginPage: async () => {},
   };
 
   const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'auth_required');
-  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(result.outcome, 'dismissed');
   assert.equal(addToCartCalled, false, 'addToCart must NOT be called when cookie is null');
   assert.equal(server.shutdownCount(), 1);
 });
 
-test('auth_required when addToCart returns authentication_required error', async () => {
+test('dismissed when addToCart returns authentication_required and user dismisses login prompt', async () => {
   const candidates = makeCandidates(2);
   const session = mockSession({ actions: [
     { type: 'thumbs_complete' },
     { type: 'final_accept' },
+    { type: 'dismissed' },
   ]});
   const server = mockServer(session);
   const deps = {
     ...baseDeps({ session, server, candidates }),
     getCookieHeader: async () => 'sess=abc',
     addToCart: async () => ({ ok: false, error: 'authentication_required' }),
+    openLoginPage: async () => {},
   };
 
   const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'auth_required');
-  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(result.outcome, 'dismissed');
   assert.equal(server.shutdownCount(), 1);
 });
 
@@ -438,6 +440,153 @@ test('empty retailers from store: returns no_results without starting server', a
   const result = await runCartFlow({ query: 'sweater', deps });
   assert.equal(result.outcome, 'no_results');
   assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (Plan 7): login retry loop
+// ---------------------------------------------------------------------------
+
+test('login retry happy path: null cookie first, cookie on retry, success', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+    { type: 'login_complete' },
+  ]});
+  const server = mockServer(session);
+  let cookieCallCount = 0;
+  let openLoginPageCalls = [];
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async (host) => {
+      cookieCallCount++;
+      return cookieCallCount === 1 ? null : 'sess=abc';
+    },
+    addToCart: async () => ({ ok: true }),
+    openLoginPage: async (host) => { openLoginPageCalls.push(host); },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(openLoginPageCalls.length, 1, 'openLoginPage called once');
+  assert.equal(openLoginPageCalls[0], 'marinelayer.com');
+  const loginState = session.pushed.find(s => s.stage === 'login_required');
+  assert.ok(loginState, 'login_required stage must be pushed');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('login retry: null cookie both attempts → auth_required', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+    { type: 'login_complete' },
+  ]});
+  const server = mockServer(session);
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => null,
+    addToCart: async () => ({ ok: true }),
+    openLoginPage: async () => {},
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'auth_required');
+  assert.equal(result.host, 'marinelayer.com');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('login retry: dismissed during login_required → dismissed', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+    { type: 'dismissed' },
+  ]});
+  const server = mockServer(session);
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => null,
+    addToCart: async () => ({ ok: true }),
+    openLoginPage: async () => {},
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'dismissed');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('login retry: addToCart auth_required first, ok on retry → success', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+    { type: 'login_complete' },
+  ]});
+  const server = mockServer(session);
+  let addToCartCallCount = 0;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => 'sess=abc',
+    addToCart: async () => {
+      addToCartCallCount++;
+      return addToCartCallCount === 1
+        ? { ok: false, error: 'authentication_required' }
+        : { ok: true };
+    },
+    openLoginPage: async () => {},
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(addToCartCallCount, 2, 'addToCart called twice (once per attempt)');
+  const loginState = session.pushed.find(s => s.stage === 'login_required');
+  assert.ok(loginState, 'login_required stage must be pushed');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('login retry: non-auth cart error does not trigger retry', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  let openLoginPageCalled = false;
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => 'sess=abc',
+    addToCart: async () => ({ ok: false, error: 'out_of_stock' }),
+    openLoginPage: async () => { openLoginPageCalled = true; },
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'cart_error');
+  assert.equal(result.error, 'out_of_stock');
+  assert.equal(openLoginPageCalled, false, 'openLoginPage must NOT be called for non-auth errors');
+  assert.equal(server.shutdownCount(), 1);
+});
+
+test('login retry: openLoginPage is fire-and-forget — slow promise does not block flow', async () => {
+  const candidates = makeCandidates(2);
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+    { type: 'dismissed' },
+  ]});
+  const server = mockServer(session);
+  // openLoginPage returns a promise that never resolves — flow must still proceed
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    getCookieHeader: async () => null,
+    addToCart: async () => ({ ok: true }),
+    openLoginPage: (_host) => new Promise(() => {}), // never resolves
+  };
+
+  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
+  // Flow reached login prompt, user dismissed — must not hang
+  assert.equal(result.outcome, 'dismissed');
+  assert.equal(server.shutdownCount(), 1);
 });
 
 test('addToCart is called with correct host, variantId, and cookie', async () => {
