@@ -3,7 +3,7 @@
 // CLI shim: parse argv, wire real deps, run runCartFlow, print structured outcome, exit.
 
 import { execFile } from 'node:child_process';
-import { readProfile } from '../lib/profile.js';
+import { readProfile, appendPurchase } from '../lib/profile.js';
 import { readRetailers } from '../lib/retailers-store.js';
 import { search, addToCart } from '../lib/retailers/shopify.js';
 import { getCookieHeader, openLoginPage } from '../lib/browser.js';
@@ -37,7 +37,12 @@ function sleep(ms) {
 async function main() {
   const result = await runCartFlow({
     query,
-    deps: { readProfile, readRetailers, search, getCookieHeader, addToCart, startServer, openUrl, openLoginPage, log, sleep },
+    deps: {
+      readProfile, readRetailers, search, getCookieHeader, addToCart,
+      startServer, openUrl, openLoginPage, log, sleep,
+      appendPurchase,
+      now: () => new Date().toISOString().slice(0, 10),
+    },
   });
 
   switch (result.outcome) {

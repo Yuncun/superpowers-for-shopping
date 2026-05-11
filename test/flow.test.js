@@ -59,6 +59,8 @@ function baseDeps({ session, server, candidates = makeCandidates(3) } = {}) {
     openUrl: () => {},
     log: () => {},
     sleep: async () => {},
+    appendPurchase: async () => {},
+    now: () => '2026-05-11',
   };
 }
 
@@ -617,4 +619,74 @@ test('addToCart is called with correct host, variantId, and cookie', async () =>
   assert.equal(capturedArgs.host, 'marinelayer.com');
   assert.equal(capturedArgs.variantId, 9876);
   assert.equal(capturedArgs.cookie, 'mysess=xyz');
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 (Plan 8): appendPurchase called on success, not on other outcomes
+// ---------------------------------------------------------------------------
+
+test('success path calls appendPurchase once with correct fields', async () => {
+  const candidates = [
+    {
+      url: 'https://marinelayer.com/products/swim-trunk',
+      title: '5" Tailored Swim Trunk',
+      brand: 'Marine Layer',
+      price: '94.00',
+      image: null,
+      variants: [{ size: 'M', color: 'Navy', in_stock: true, variant_id: 1001 }],
+    },
+  ];
+  const session = mockSession({ actions: [
+    { type: 'thumbs_complete' },
+    { type: 'final_accept' },
+  ]});
+  const server = mockServer(session);
+  const appendCalls = [];
+  const deps = {
+    ...baseDeps({ session, server, candidates }),
+    appendPurchase: async (row) => { appendCalls.push(row); },
+    now: () => '2026-05-11',
+  };
+
+  const result = await runCartFlow({ query: 'swim trunk', retailers: ['marinelayer.com'], deps });
+  assert.equal(result.outcome, 'success');
+  assert.equal(appendCalls.length, 1, 'appendPurchase must be called exactly once');
+  assert.deepEqual(appendCalls[0], {
+    date: '2026-05-11',
+    item: '5" Tailored Swim Trunk',
+    brand: 'Marine Layer',
+    '$': '94.00',
+    kept: '?',
+    notes: '',
+  });
+});
+
+test('non-success outcomes do NOT call appendPurchase', async () => {
+  const candidates = makeCandidates(2);
+  const appendCalls = [];
+  const appendSpy = async (row) => { appendCalls.push(row); };
+
+  // canceled
+  {
+    const session = mockSession({ actions: [{ type: 'thumbs_complete' }, { type: 'final_cancel' }] });
+    const server = mockServer(session);
+    const result = await runCartFlow({
+      query: 'q', retailers: ['marinelayer.com'],
+      deps: { ...baseDeps({ session, server, candidates }), appendPurchase: appendSpy },
+    });
+    assert.equal(result.outcome, 'canceled');
+  }
+
+  // dismissed
+  {
+    const session = mockSession({ actions: [{ type: 'dismissed' }] });
+    const server = mockServer(session);
+    const result = await runCartFlow({
+      query: 'q', retailers: ['marinelayer.com'],
+      deps: { ...baseDeps({ session, server, candidates }), appendPurchase: appendSpy },
+    });
+    assert.equal(result.outcome, 'dismissed');
+  }
+
+  assert.equal(appendCalls.length, 0, 'appendPurchase must NOT be called on canceled or dismissed');
 });
