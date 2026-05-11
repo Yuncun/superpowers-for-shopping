@@ -10,6 +10,8 @@ import {
   removeRetailer,
 } from '../lib/retailers-store.js';
 import { detect } from '../lib/retailers/shopify.js';
+import { openLoginPage } from '../lib/browser.js';
+import { normalizeHost } from '../lib/host.js';
 
 const [, , cmd, ...args] = process.argv;
 
@@ -71,6 +73,22 @@ async function cmdRemove(host) {
   }
 }
 
+async function cmdLogin(host) {
+  if (!host) {
+    process.stderr.write('Usage: retailers login <host>\n');
+    process.exit(2);
+  }
+  const normalized = normalizeHost(host);
+  try {
+    await openLoginPage(normalized);
+    process.stdout.write(`opened=${normalized}\n`);
+    process.exit(0);
+  } catch (err) {
+    process.stdout.write(`error=${err.code || 'failed'}\n`);
+    process.exit(1);
+  }
+}
+
 async function cmdInit() {
   const alreadyExists = existsSync(retailersPath());
   await readRetailers(); // auto-creates if missing
@@ -87,9 +105,10 @@ async function main() {
     case 'list':   await cmdList(); break;
     case 'add':    await cmdAdd(args[0]); break;
     case 'remove': await cmdRemove(args[0]); break;
+    case 'login':  await cmdLogin(args[0]); break;
     case 'init':   await cmdInit(); break;
     default:
-      process.stderr.write('Usage: retailers <list|add <host>|remove <host>|init>\n');
+      process.stderr.write('Usage: retailers <list|add <host>|remove <host>|login <host>|init>\n');
       process.exit(2);
   }
 }

@@ -1,6 +1,6 @@
 ---
 description: List or manage the retailers your /cart flow searches.
-argument-hint: list | add <host> | remove <host>
+argument-hint: list | add <host> | remove <host> | login <host>
 ---
 
 The user just ran `/cart-retailers $ARGUMENTS`.
@@ -9,6 +9,7 @@ Parse `$ARGUMENTS`:
 - If empty or `list` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js list` and surface output.
 - If starts with `add ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js add <host>` and surface output.
 - If starts with `remove ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js remove <host>` and surface output.
+- If starts with `login ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js login <host>` and surface output.
 
 For `add`: surface a friendly message based on outcome.
   - `added=<host>`: "Added <host> to your retailers list."
@@ -19,5 +20,9 @@ For `add`: surface a friendly message based on outcome.
 For `remove`: surface a friendly message based on outcome.
   - `removed=<host>`: "Removed <host> from your retailers list."
   - `error=not_found`: "<host> isn't in your list."
+
+For `login`: surface a friendly message based on outcome.
+  - `opened=<host>`: "Opening the login page for <host> in your browser. Come back and run `/cart` once you're logged in."
+  - `error=<code>`: "Couldn't open the login page for <host>: <code>."
 
 For `list`: display the retailers as a table showing host, tier, handler, and last used date.
