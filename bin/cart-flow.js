@@ -3,12 +3,13 @@
 // CLI shim: parse argv, wire real deps, run runCartFlow, print structured outcome, exit.
 
 import { execFile } from 'node:child_process';
-import { readProfile, appendPurchase } from '../lib/profile.js';
+import { readProfile, appendPurchase, updateFrontmatter } from '../lib/profile.js';
 import { readRetailers } from '../lib/retailers-store.js';
 import { search, addToCart } from '../lib/retailers/shopify.js';
 import { getCookieHeader, openLoginPage } from '../lib/browser.js';
 import { startServer } from '../server/ui.js';
 import { runCartFlow } from '../lib/flow.js';
+import { extractColorsFromProduct, mergePaletteCandidates } from '../lib/palette-extractor.js';
 
 const query = process.argv[2];
 
@@ -41,6 +42,9 @@ async function main() {
       readProfile, readRetailers, search, getCookieHeader, addToCart,
       startServer, openUrl, openLoginPage, log, sleep,
       appendPurchase,
+      updateProfile: updateFrontmatter,
+      extractColors: extractColorsFromProduct,
+      mergePalette: mergePaletteCandidates,
       now: () => new Date().toISOString().slice(0, 10),
     },
   });
