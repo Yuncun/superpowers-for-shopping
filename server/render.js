@@ -325,6 +325,12 @@ window.__SESSION__ = ${sessionJson};
       .replace(/"/g, '&quot;');
   }
 
+  function fmtPrice(p) {
+    if (p == null || p === '') return '';
+    var s = String(p);
+    return /^[$€£¥]/.test(s) ? escHtml(s) : '$' + escHtml(s);
+  }
+
   // ---- render(state) ----
 
   function render(state) {
@@ -390,7 +396,7 @@ window.__SESSION__ = ${sessionJson};
         body.innerHTML =
           '<div class="card-brand">' + escHtml(c.brand || '') + '</div>' +
           '<div class="card-title">' + escHtml(c.title || '') + '</div>' +
-          '<div class="card-price">' + escHtml(c.price || '') + '</div>';
+          '<div class="card-price">' + fmtPrice(c.price) + '</div>';
 
         var actions = document.createElement('div');
         actions.className = 'card-actions';
@@ -467,7 +473,7 @@ window.__SESSION__ = ${sessionJson};
           '<div class="final-body">' +
             '<div class="final-brand">' + escHtml(product.brand || '') + '</div>' +
             '<div class="final-title">' + escHtml(product.title || '') + '</div>' +
-            '<div class="final-price">' + escHtml(product.price || '') + '</div>' +
+            '<div class="final-price">' + fmtPrice(product.price) + '</div>' +
             '<div class="final-actions">' +
               '<button class="btn-primary" id="btn-accept">Looks good — send to cart</button>' +
               (alternativesCount > 0
