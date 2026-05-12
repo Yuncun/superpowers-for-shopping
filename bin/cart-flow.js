@@ -11,10 +11,13 @@ import { startServer } from '../server/ui.js';
 import { runCartFlow } from '../lib/flow.js';
 import { extractColorsFromProduct, mergePaletteCandidates } from '../lib/palette-extractor.js';
 
-const query = process.argv[2];
+const rawArgs = process.argv.slice(2);
+const noOpen = rawArgs.includes('--no-open');
+const positional = rawArgs.filter((a) => a !== '--no-open');
+const query = positional[0];
 
 if (!query) {
-  process.stderr.write('Usage: cart-flow "<query>"\n');
+  process.stderr.write('Usage: cart-flow [--no-open] "<query>"\n');
   process.exit(2);
 }
 
@@ -36,11 +39,17 @@ function sleep(ms) {
 }
 
 async function main() {
+  const wrappedOpenUrl = (url) => {
+    process.stdout.write(`__CART_FLOW_URL__ ${url}\n`);
+    if (noOpen) return Promise.resolve();
+    return openUrl(url);
+  };
+
   const result = await runCartFlow({
     query,
     deps: {
       readProfile, readRetailers, search, getCookieHeader, addToCart,
-      startServer, openUrl, openLoginPage, log, sleep,
+      startServer, openUrl: wrappedOpenUrl, openLoginPage, log, sleep,
       appendPurchase,
       updateProfile: updateFrontmatter,
       extractColors: extractColorsFromProduct,
