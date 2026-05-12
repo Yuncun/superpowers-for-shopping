@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.12.0 — 2026-05-11
+
+Real Shopify search. The previous `search()` was hitting `/products.json?q=…`,
+which is Shopify's product LISTING endpoint — it ignores the `q` parameter
+and just returns the first N products by store-sort. Every query returned
+essentially the same set, no relevance, no filtering. This explained why
+"sweater" returned swim trunks and "shirt" returned the same swim trunks.
+
+- New two-phase search in `lib/retailers/shopify.js`:
+  1. `GET /search/suggest.json?q=<query>&resources[type]=product&resources[limit]=50`
+     for relevance-ranked product summaries (handles only, no variants).
+  2. For each unique handle, parallel `GET /products/<handle>.json`
+     fetches for variant data. Concurrency capped at 8.
+- Graceful degradation: any failure in either phase returns `[]` rather
+  than crashing the flow; the orchestrator already handles no_results.
+- New test fixtures: real captured responses from marinelayer.com for
+  `?q=sweater` (suggest) and `icon-sweater-6` (detail). Used to assert the
+  full pipeline returns at least one sweater for the sweater query.
+- New URL-encoding regression test for the `resources[type]` query param —
+  raw `[`/`]` brackets cause Shopify to return 400, so the test pins the
+  `%5B`/`%5D` encoding.
+
+Caught by live verification of the v0.11.3 UI fix — the page rendered fine
+but the products on it weren't sweaters. Latent since v0.2.0; never caught
+by unit tests because they mocked the response shape, never caught by the
+protocol harness because it doesn't assert relevance.
+
+Open spec items still deferred: Tier-1 handlers, aesthetic variance ranking,
+Pinterest moodboard ingestion, virtual try-on, cross-retailer dedup, affiliate
+links, gift mode. Also still considering dropping agent-browser entirely
+(per v0.11.2 conversation — guest carts work, auth isn't load-bearing).
+
 ## 0.11.3 — 2026-05-11
 
 UI rendering hotfix + observability layer the protocol harness was missing.
