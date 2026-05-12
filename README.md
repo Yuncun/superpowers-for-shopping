@@ -1,8 +1,8 @@
 # superpowers-for-shopping
 
-An ADHD-helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
+A Low-friction helper Claude Code plugin that takes "I need a new sweater" to a populated shopping cart with one click. Handles the rote work of searching, narrowing, and cart-loading; leaves you only the high-bandwidth aesthetic call and final approval.
 
-**Status:** v0.10.0 — `/cart-setup` is now a brief brainstorm rather than an 8-question survey. Opens with one free-form prompt, extracts what it can, fills only the gaps with preset-backed questions. Drops the palette question; palette is learned passively from thumb-accept signals in `/cart`.
+**Status:** v0.11.0 — `/cart` is now testable end-to-end without a human in the loop. Protocol-level harness drives the flow via SSE + POST; live dry-run script (`npm run e2e:cart`) runs real flows against real retailers and opens any resulting cart URL in the browser.
 
 ## Scope
 

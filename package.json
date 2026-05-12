@@ -1,7 +1,7 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.10.0",
-  "description": "ADHD-helper Claude Code plugin for considered purchases",
+  "version": "0.11.0",
+  "description": "Low-friction helper Claude Code plugin for considered purchases",
   "type": "module",
   "private": true,
   "engines": {

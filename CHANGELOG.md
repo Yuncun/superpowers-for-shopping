@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.11.0 — 2026-05-11
+
+Programmatic end-to-end test harness for `/cart`. Drives the flow at the
+protocol level (SSE + POST), no browser required.
+
+- `bin/cart-flow.js` now prints the session URL to stdout on a parseable
+  sentinel line (`__CART_FLOW_URL__ <url>`) and accepts `--no-open` to
+  suppress the macOS `open` call.
+- New `test/lib/cart-harness.js`: reusable module that spawns the
+  cart-flow subprocess, subscribes to SSE, and drives the state machine
+  with an injected chooser. All deps (fetch, EventSource, spawn) DI'd
+  for unit testing.
+- New `npm run e2e:cart`: runs 3 default queries against real retailers,
+  reports outcomes, opens any successful cart URL in the user's browser.
+- Renamed "ADHD-helper" to "Low-friction helper" across customer-facing
+  descriptions. Behavior signal (terse, time-boxed) stays encoded in
+  individual skill prompts; the package description no longer pigeonholes.
+
+Open spec items still deferred: Tier-1 handlers (Amazon, IKEA, Uniqlo,
+West Elm), aesthetic variance ranking, Pinterest moodboard ingestion,
+virtual try-on, cross-retailer dedup beyond URL, affiliate links, gift mode.
+
 ## 0.10.0 — 2026-05-11
 
 `/cart-setup` UX overhaul. The wizard now opens with one free-form prompt,
