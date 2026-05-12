@@ -144,3 +144,24 @@ test('httpGetJson rejects application/jsonweirdsuffix as not_json', async () => 
     (err) => err.code === 'not_json'
   );
 });
+
+test('httpPostJson accepts text/javascript (Shopify cart/add.js)', async () => {
+  // Shopify's /cart/add.js returns content-type text/javascript with a JSON body.
+  // Before v0.11.1 this was misclassified as not_json → authentication_required,
+  // masking successful adds as auth failures.
+  const fetchImpl = async () => makeResponse({
+    body: { id: 12345, quantity: 1, key: 'abc' },
+    contentType: 'text/javascript; charset=utf-8',
+  });
+  const result = await httpPostJson('https://example.com/cart/add.js', { id: 12345 }, { fetchImpl });
+  assert.deepEqual(result, { id: 12345, quantity: 1, key: 'abc' });
+});
+
+test('httpGetJson accepts application/javascript', async () => {
+  const fetchImpl = async () => makeResponse({
+    body: { ok: true },
+    contentType: 'application/javascript',
+  });
+  const result = await httpGetJson('https://example.com/x', { fetchImpl });
+  assert.deepEqual(result, { ok: true });
+});

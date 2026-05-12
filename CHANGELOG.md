@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.1 — 2026-05-11
+
+Caught by the Plan 11 E2E harness on its first live run against marinelayer.com.
+
+- Fix: `lib/http.js` was rejecting `text/javascript` content-type as `not_json`.
+  Shopify's `/cart/add.js` returns JSON-bodied responses with content-type
+  `text/javascript; charset=utf-8` — the legacy Shopify-AJAX convention. The
+  rejection cascaded through `lib/retailers/shopify.js:addToCart` which
+  classifies `not_json` as `authentication_required`, so successful adds were
+  surfacing as auth failures. Cart was actually getting populated server-side;
+  the orchestrator just didn't know.
+- Now accepts a small whitelist: `application/json`, `text/javascript`,
+  `application/javascript`. The `not_json` classifier still fires for genuine
+  HTML responses (e.g. login redirects), preserving the auth-detection path.
+- Live verification: `npm run e2e:cart` now produces 3/3 successful runs
+  against marinelayer.com with real items added to a real cart.
+
 ## 0.11.0 — 2026-05-11
 
 Programmatic end-to-end test harness for `/cart`. Drives the flow at the
