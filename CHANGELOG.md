@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.2 — 2026-05-11
+
+Live-verification fix on top of the v0.11.1 dry-run runs. The harness was
+reporting "success → /cart" but the user's browser saw an empty cart.
+
+- Fix: `lib/flow.js` now redirects to a Shopify cart permalink
+  (`/cart/<variant_id>:1`) instead of `/cart`. The Node-side `addToCart`
+  was adding to a discarded fetch cookie jar, so the user's browser — which
+  is what actually opens the cart URL — saw its own empty cart. The
+  permalink hands cart-add responsibility to whichever browser opens it,
+  using that browser's own cookies. Confirmed against marinelayer.com:
+  Shop Pay express checkout opens with the item, address, and card
+  pre-filled. One tap from purchase.
+- Removed the `"adhd"` discoverability keyword from
+  `.claude-plugin/plugin.json`. The customer-facing copy was already
+  swapped in v0.11.0; this completes the rename.
+
 ## 0.11.1 — 2026-05-11
 
 Caught by the Plan 11 E2E harness on its first live run against marinelayer.com.

@@ -428,7 +428,14 @@ test('regression: success still works after Task 2 changes', async () => {
   const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
   assert.equal(result.outcome, 'success');
   assert.ok(result.product);
-  assert.ok(result.cartUrl.startsWith('https://'));
+  // cartUrl must be a Shopify permalink so the user's browser does the add
+  // via its own cookies. See lib/flow.js — Node-side addToCart's cookies are
+  // discarded by fetch, so /cart in the user's browser would otherwise be empty.
+  assert.match(
+    result.cartUrl,
+    /^https:\/\/marinelayer\.com\/cart\/\d+:1$/,
+    `expected permalink, got ${result.cartUrl}`,
+  );
   assert.equal(server.shutdownCount(), 1);
 });
 
