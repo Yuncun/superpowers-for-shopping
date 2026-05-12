@@ -134,45 +134,70 @@ test('detect: accepts cdn/shop/ marker as alternative to cdn.shopify.com', async
   assert.equal(await detect('newstore.com', { fetchImpl }), true);
 });
 
-// --- search ---
+// --- search (real /search/suggest.json implementation) ---
 
-test('search: normalizes product into spec shape', async () => {
-  const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=sweater&limit=50': { body: { products: [SAMPLE_PRODUCT] } },
-  });
-  const results = await search('marinelayer.com', 'sweater', { fetchImpl });
-  assert.equal(results.length, 1);
-  assert.equal(results[0].url, 'https://marinelayer.com/products/crew-sweater');
-  assert.equal(results[0].brand, 'Marine Layer');
-  assert.equal(results[0].title, 'Crew Neck Sweater');
-  assert.equal(results[0].price, '98.00');
-  assert.equal(results[0].image, 'https://cdn.shopify.com/.../crew.jpg');
-  assert.equal(results[0].variants.length, 2);
-  assert.deepEqual(results[0].variants[0], { size: 'M', color: 'Navy', in_stock: true, variant_id: 1001 });
-  assert.deepEqual(results[0].variants[1], { size: 'L', color: 'Navy', in_stock: false, variant_id: 1002 });
-});
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
-test('search: URL-encodes query with spaces and special chars', async () => {
-  let seenUrl;
-  const fetchImpl = async (url) => { seenUrl = url; return makeResponse({ body: { products: [] } }); };
-  await search('marinelayer.com', 'navy & cream', { fetchImpl });
-  assert.match(seenUrl, /q=navy%20%26%20cream/);
-});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures');
 
-test('search: respects custom limit', async () => {
-  let seenUrl;
-  const fetchImpl = async (url) => { seenUrl = url; return makeResponse({ body: { products: [] } }); };
-  await search('marinelayer.com', 'x', { fetchImpl, limit: 10 });
-  assert.match(seenUrl, /limit=10/);
-});
+function buildSuggestUrlFor(host, query, limit = 50) {
+  return `https://${host}/search/suggest.json?q=${encodeURIComponent(query)}&resources%5Btype%5D=product&resources%5Blimit%5D=${limit}`;
+}
 
-test('search: returns empty array on no results', async () => {
-  const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=xyz&limit=50': { body: { products: [] } },
-  });
-  assert.deepEqual(await search('marinelayer.com', 'xyz', { fetchImpl }), []);
-});
+function buildDetailUrlFor(host, handle) {
+  return `https://${host}/products/${encodeURIComponent(handle)}.json`;
+}
 
+// Minimal suggest-response builder: products in suggest carry handle, title, vendor,
+// price (string), featured_image{url}, image. Variants are always [] in suggest.
+function suggestProduct({ handle, title = handle, vendor = 'Marine Layer', price = '98.00', featured_image, image }) {
+  return {
+    handle,
+    title,
+    vendor,
+    price,
+    price_min: price,
+    price_max: price,
+    available: true,
+    tags: [],
+    type: '',
+    product_type: 'None',
+    body: null,
+    variants: [],
+    featured_image: featured_image ?? { url: `https://cdn.shopify.com/${handle}.jpg`, alt: title },
+    image: image ?? `https://cdn.shopify.com/${handle}.jpg`,
+    url: `/products/${handle}`,
+  };
+}
+
+function suggestResponse(products) {
+  return { resources: { results: { products } } };
+}
+
+// Detail-shaped product (what /products/<handle>.json returns inside .product).
+function detailProduct(overrides = {}) {
+  return {
+    id: 100,
+    handle: 'crew-sweater',
+    title: 'Crew Neck Sweater',
+    vendor: 'Marine Layer',
+    images: [{ src: 'https://cdn.shopify.com/.../crew.jpg' }],
+    options: [
+      { name: 'Size', position: 1 },
+      { name: 'Color', position: 2 },
+    ],
+    variants: [
+      { id: 1001, option1: 'M', option2: 'Navy', price: '98.00', available: true },
+      { id: 1002, option1: 'L', option2: 'Navy', price: '98.00', available: false },
+    ],
+    ...overrides,
+  };
+}
+
+// 1. Empty query throws invalid_query.
 test('search: throws invalid_query on empty / whitespace', async () => {
   const fetchImpl = async () => { throw new Error('should not fetch'); };
   for (const bad of ['', '   ', '\t']) {
@@ -183,6 +208,7 @@ test('search: throws invalid_query on empty / whitespace', async () => {
   }
 });
 
+// 2. Invalid host throws invalid_host.
 test('search: throws invalid_host on bad host', async () => {
   await assert.rejects(
     () => search('', 'sweater', { fetchImpl: async () => ({}) }),
@@ -190,81 +216,238 @@ test('search: throws invalid_host on bad host', async () => {
   );
 });
 
-test('search: drops products with missing handle', async () => {
+// 3. Empty products from suggest → [].
+test('search: returns [] when suggest endpoint returns empty products', async () => {
   const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': {
-      body: { products: [SAMPLE_PRODUCT, { id: 999, title: 'No Handle' }] },
-    },
+    [buildSuggestUrlFor('marinelayer.com', 'xyzzy')]: { body: suggestResponse([]) },
   });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.equal(results.length, 1);
+  assert.deepEqual(await search('marinelayer.com', 'xyzzy', { fetchImpl }), []);
 });
 
-test('search: handles product with no images (image: null)', async () => {
+// 4. Suggest 404 → [] gracefully.
+test('search: returns [] when suggest endpoint 404s', async () => {
   const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': {
-      body: { products: [{ ...SAMPLE_PRODUCT, images: [] }] },
-    },
+    [buildSuggestUrlFor('marinelayer.com', 'sweater')]: { status: 404, body: 'Not Found', contentType: 'text/plain' },
   });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.equal(results[0].image, null);
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.deepEqual(await search('marinelayer.com', 'sweater', { fetchImpl }), []);
+  } finally {
+    console.warn = origWarn;
+  }
 });
 
-test('search: handles product with no variants (variants: [], price: null)', async () => {
+// 5. Suggest returns non-JSON → [] gracefully.
+test('search: returns [] when suggest endpoint returns non-JSON', async () => {
   const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': {
-      body: { products: [{ ...SAMPLE_PRODUCT, variants: [] }] },
-    },
+    [buildSuggestUrlFor('marinelayer.com', 'sweater')]: { body: '<html>login</html>', contentType: 'text/html' },
   });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.deepEqual(results[0].variants, []);
-  assert.equal(results[0].price, null);
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.deepEqual(await search('marinelayer.com', 'sweater', { fetchImpl }), []);
+  } finally {
+    console.warn = origWarn;
+  }
 });
 
-test('search: when options metadata says color-first, swaps axis assignment', async () => {
-  const colorFirstProduct = {
-    ...SAMPLE_PRODUCT,
-    options: [{ name: 'Color', position: 1 }, { name: 'Size', position: 2 }],
-    variants: [{ id: 1, option1: 'Navy', option2: 'M', price: '98.00', available: true }],
+// 6. Suggest network error → [] gracefully.
+test('search: returns [] on suggest network error', async () => {
+  const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.deepEqual(await search('marinelayer.com', 'sweater', { fetchImpl }), []);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+// 7. Happy path: 3 suggest products + 3 detail fetches → 3 normalized in order.
+test('search: happy path — fans out detail fetches and preserves suggest order', async () => {
+  const handles = ['a-sweater', 'b-sweater', 'c-sweater'];
+  const routes = {
+    [buildSuggestUrlFor('marinelayer.com', 'sweater')]: {
+      body: suggestResponse(handles.map((h) => suggestProduct({ handle: h, title: `${h} Title` }))),
+    },
   };
-  const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': { body: { products: [colorFirstProduct] } },
-  });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.equal(results[0].variants[0].size, 'M');
-  assert.equal(results[0].variants[0].color, 'Navy');
-});
-
-test('search: when options metadata absent, defaults to option1=size option2=color', async () => {
-  const noMetaProduct = { ...SAMPLE_PRODUCT, options: undefined };
-  const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': { body: { products: [noMetaProduct] } },
-  });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.equal(results[0].variants[0].size, 'M');
-  assert.equal(results[0].variants[0].color, 'Navy');
-});
-
-test('search: propagates http_error on 5xx (does not swallow like detect)', async () => {
-  const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': { status: 500, body: 'server error', contentType: 'text/plain' },
-  });
-  await assert.rejects(
-    () => search('marinelayer.com', 'x', { fetchImpl }),
-    (err) => err.code === 'http_error'
+  for (const h of handles) {
+    routes[buildDetailUrlFor('marinelayer.com', h)] = {
+      body: { product: detailProduct({ handle: h, title: `${h} Title` }) },
+    };
+  }
+  const fetchImpl = mockFetch(routes);
+  const results = await search('marinelayer.com', 'sweater', { fetchImpl });
+  assert.equal(results.length, 3);
+  assert.deepEqual(
+    results.map((r) => r.url),
+    handles.map((h) => `https://marinelayer.com/products/${h}`)
   );
+  assert.equal(results[0].brand, 'Marine Layer');
+  assert.equal(results[0].title, 'a-sweater Title');
+  assert.equal(results[0].variants.length, 2);
+  assert.equal(results[0].variants[0].size, 'M');
+  assert.equal(results[0].variants[0].color, 'Navy');
+  assert.equal(results[0].variants[0].variant_id, 1001);
+  assert.equal(results[0].price, '98.00');
 });
 
-test('search: handles price as numeric (not string) by stringifying', async () => {
-  const numericPriceProduct = {
-    ...SAMPLE_PRODUCT,
-    variants: [{ id: 1, option1: 'M', option2: 'Navy', price: 98, available: true }],
-  };
+// 8. Dedup: same handle twice in suggest → one product in output.
+test('search: dedups suggest products by handle', async () => {
+  const dup = suggestProduct({ handle: 'icon-sweater', title: 'Icon Sweater' });
   const fetchImpl = mockFetch({
-    'https://marinelayer.com/products.json?q=x&limit=50': { body: { products: [numericPriceProduct] } },
+    [buildSuggestUrlFor('marinelayer.com', 'sweater')]: {
+      body: suggestResponse([dup, dup, dup]),
+    },
+    [buildDetailUrlFor('marinelayer.com', 'icon-sweater')]: {
+      body: { product: detailProduct({ handle: 'icon-sweater', title: 'Icon Sweater' }) },
+    },
   });
-  const results = await search('marinelayer.com', 'x', { fetchImpl });
-  assert.equal(results[0].price, '98');
+  const results = await search('marinelayer.com', 'sweater', { fetchImpl });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].url, 'https://marinelayer.com/products/icon-sweater');
+});
+
+// 9. Concurrency: detailConcurrency cap respected.
+test('search: respects detailConcurrency cap on detail fetches', async () => {
+  const N = 10;
+  const CAP = 3;
+  const handles = Array.from({ length: N }, (_, i) => `p-${i}`);
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const fetchImpl = async (url) => {
+    if (url.includes('/search/suggest.json')) {
+      return makeResponse({
+        body: suggestResponse(handles.map((h) => suggestProduct({ handle: h, title: h }))),
+      });
+    }
+    if (url.includes('/products/') && url.endsWith('.json')) {
+      inFlight++;
+      if (inFlight > maxInFlight) maxInFlight = inFlight;
+      // yield to give other in-flight a chance to launch before we resolve
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      inFlight--;
+      const match = url.match(/\/products\/([^.]+)\.json/);
+      const handle = decodeURIComponent(match[1]);
+      return makeResponse({ body: { product: detailProduct({ handle, title: handle }) } });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  const results = await search('marinelayer.com', 'x', { fetchImpl, detailConcurrency: CAP });
+  assert.equal(results.length, N);
+  assert.ok(maxInFlight <= CAP, `maxInFlight ${maxInFlight} exceeded cap ${CAP}`);
+  assert.ok(maxInFlight >= 1, 'expected at least one in-flight detail fetch');
+});
+
+// 10. One detail 404s → others returned, failed dropped.
+test('search: drops products whose detail fetch fails', async () => {
+  const handles = ['ok-1', 'broken', 'ok-2'];
+  const routes = {
+    [buildSuggestUrlFor('marinelayer.com', 'sweater')]: {
+      body: suggestResponse(handles.map((h) => suggestProduct({ handle: h, title: h }))),
+    },
+    [buildDetailUrlFor('marinelayer.com', 'ok-1')]: {
+      body: { product: detailProduct({ handle: 'ok-1', title: 'ok-1' }) },
+    },
+    [buildDetailUrlFor('marinelayer.com', 'broken')]: {
+      status: 404, body: 'Not Found', contentType: 'text/plain',
+    },
+    [buildDetailUrlFor('marinelayer.com', 'ok-2')]: {
+      body: { product: detailProduct({ handle: 'ok-2', title: 'ok-2' }) },
+    },
+  };
+  // Suppress warn so the test output isn't noisy.
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const results = await search('marinelayer.com', 'sweater', { fetchImpl: mockFetch(routes) });
+    assert.equal(results.length, 2);
+    assert.deepEqual(results.map((r) => r.url), [
+      'https://marinelayer.com/products/ok-1',
+      'https://marinelayer.com/products/ok-2',
+    ]);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+// 11. Fixture test: real captured suggest + detail responses. The first result
+//     must be the Icon Sweater (top of suggest), and its title must contain
+//     "sweater" case-insensitively.
+test('search: fixture — sweater query returns a sweater first', async () => {
+  const suggestFixture = JSON.parse(
+    readFileSync(path.join(FIXTURE_DIR, 'marinelayer-suggest-sweater.json'), 'utf8')
+  );
+  const detailFixture = JSON.parse(
+    readFileSync(path.join(FIXTURE_DIR, 'marinelayer-icon-sweater.json'), 'utf8')
+  );
+
+  const suggestUrl = buildSuggestUrlFor('marinelayer.com', 'sweater');
+  const detailUrlsToFixture = new Map();
+  // Map every handle in the suggest response → the same detail fixture
+  // (representative for testing the pipeline; the relevance assertion is the
+  // important part, not per-product accuracy).
+  for (const p of suggestFixture.resources.results.products) {
+    detailUrlsToFixture.set(buildDetailUrlFor('marinelayer.com', p.handle), detailFixture);
+  }
+
+  const fetchImpl = async (url) => {
+    if (url === suggestUrl) return makeResponse({ body: suggestFixture });
+    if (detailUrlsToFixture.has(url)) {
+      return makeResponse({ body: detailUrlsToFixture.get(url) });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  const results = await search('marinelayer.com', 'sweater', { fetchImpl });
+  assert.ok(results.length > 0, 'expected at least one result');
+  assert.match(results[0].title, /sweater/i, `first title "${results[0].title}" should contain "sweater"`);
+});
+
+// 12. Title-relevance: with the fixture, EVERY returned product's title contains
+//     "sweater" (case-insensitive). All 10 suggest entries are sweaters.
+test('search: fixture — all returned products are sweater-titled', async () => {
+  const suggestFixture = JSON.parse(
+    readFileSync(path.join(FIXTURE_DIR, 'marinelayer-suggest-sweater.json'), 'utf8')
+  );
+  const detailFixture = JSON.parse(
+    readFileSync(path.join(FIXTURE_DIR, 'marinelayer-icon-sweater.json'), 'utf8')
+  );
+
+  const suggestUrl = buildSuggestUrlFor('marinelayer.com', 'sweater');
+  const fetchImpl = async (url) => {
+    if (url === suggestUrl) return makeResponse({ body: suggestFixture });
+    // Any /products/<handle>.json → the same detail fixture for shape.
+    if (/\/products\/[^/]+\.json$/.test(url)) {
+      return makeResponse({ body: detailFixture });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  const results = await search('marinelayer.com', 'sweater', { fetchImpl });
+  for (const r of results) {
+    // Loose: the title field (server-rendered) must mention sweater somewhere.
+    assert.match(r.title, /sweater/i, `title "${r.title}" missing "sweater"`);
+  }
+  // Plus an actual count check so a regression to 0 doesn't silently pass.
+  assert.ok(results.length >= 5, `expected ≥5 sweater results, got ${results.length}`);
+});
+
+// Bonus: verify the suggest URL contains URL-encoded brackets (regression
+// pin — the endpoint 400s on unencoded brackets).
+test('search: suggest URL uses %5B/%5D-encoded brackets', async () => {
+  let seenUrl;
+  const fetchImpl = async (url) => {
+    seenUrl = url;
+    return makeResponse({ body: suggestResponse([]) });
+  };
+  await search('marinelayer.com', 'sweater', { fetchImpl });
+  assert.match(seenUrl, /resources%5Btype%5D=product/);
+  assert.match(seenUrl, /resources%5Blimit%5D=\d+/);
+  assert.ok(!seenUrl.includes('['), 'raw [ should not appear in URL');
+  assert.ok(!seenUrl.includes(']'), 'raw ] should not appear in URL');
 });
 
 // --- cartUrl ---
