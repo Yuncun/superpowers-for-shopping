@@ -17,7 +17,8 @@
     "smoke:live": "node test/live-marinelayer.js",
     "smoke:browser": "node test/live-browser.js",
     "smoke:ui": "node test/live-ui.js",
-    "smoke:flow": "node test/live-flow.js"
+    "smoke:flow": "node test/live-flow.js",
+    "e2e:cart": "node test/e2e-cart-flow.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
