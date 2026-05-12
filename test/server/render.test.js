@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { renderPage } from '../../server/render.js';
 
 const BASE = {
@@ -65,4 +66,24 @@ test('JS sends actions via fetch or navigator.sendBeacon', () => {
   const hasFetch = html.includes('fetch(');
   const hasBeacon = html.includes('navigator.sendBeacon(');
   assert.ok(hasFetch || hasBeacon, 'missing fetch or sendBeacon for action posting');
+});
+
+// Regression: a quoting bug inside a render branch (e.g. an unescaped
+// apostrophe in a single-quoted JS string nested in the outer template
+// literal) makes the whole inline <script> unparseable, so the page renders
+// blank. Browser-side parse failures are silent unless you have devtools open.
+// Compile the inline script with vm.Script — if the syntax is bad anywhere,
+// this throws synchronously regardless of which render branch contains it.
+test('inline script body parses as valid JavaScript', () => {
+  const html = renderPage(BASE);
+  const m = html.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(m, 'no <script> block in rendered HTML');
+  const scriptBody = m[1];
+  assert.doesNotThrow(
+    () => new vm.Script(scriptBody, { filename: 'rendered-inline.js' }),
+    (err) => {
+      // Surface the file:line so a future regression is debuggable from CI.
+      return new Error(`Inline script parse failure: ${err.message}\nScript head:\n${scriptBody.slice(0, 400)}`);
+    },
+  );
 });

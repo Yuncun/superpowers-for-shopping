@@ -1,6 +1,6 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "description": "Low-friction helper Claude Code plugin for considered purchases",
   "type": "module",
   "private": true,
@@ -18,9 +18,13 @@
     "smoke:browser": "node test/live-browser.js",
     "smoke:ui": "node test/live-ui.js",
     "smoke:flow": "node test/live-flow.js",
-    "e2e:cart": "node test/e2e-cart-flow.js"
+    "e2e:cart": "node test/e2e-cart-flow.js",
+    "e2e:ui": "node test/e2e-cart-ui.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }

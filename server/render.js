@@ -374,8 +374,8 @@ window.__SESSION__ = ${sessionJson};
             '<div class="final-body">' +
               '<div class="final-brand">Almost there</div>' +
               '<div class="final-title">Log in to ' + host + '</div>' +
-              '<p class="login-msg">' + loginMsg + '. We\'ve opened the page in another tab — log in, then click below.</p>' +
-              '<button class="btn-primary" id="btn-login-complete">I\'m logged in, retry</button>' +
+              '<p class="login-msg">' + loginMsg + '. We\\'ve opened the page in another tab — log in, then click below.</p>' +
+              '<button class="btn-primary" id="btn-login-complete">I\\'m logged in, retry</button>' +
             '</div>' +
           '</div>' +
         '</div>';

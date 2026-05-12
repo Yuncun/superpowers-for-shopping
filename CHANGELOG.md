@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.11.3 — 2026-05-11
+
+UI rendering hotfix + observability layer the protocol harness was missing.
+
+- Fix: `server/render.js` had two unescaped apostrophes (lines 377 and 378,
+  in the `login_required` render branch) inside single-quoted JS strings
+  that were nested inside the outer template literal. The template literal
+  consumed the escape backslash, so the browser received `'We've opened…'`
+  and `'I'm logged in…'` — both of which close the JS string prematurely.
+  The browser failed to parse the entire inline `<script>` block, so
+  `EventSource` never opened and the page rendered blank. Same symptom in
+  every browser; not user-environmental.
+- New regression test in `test/server/render.test.js`: compiles the inline
+  `<script>` body with `node:vm` and fails on any SyntaxError. This catches
+  the bug class at unit-test time, no browser needed.
+- New `npm run e2e:ui`: full Playwright-driven UI regression. Spawns a real
+  cart-flow subprocess, opens the page in headless Chromium, asserts at
+  least one product card renders within 8 seconds, fails on any console
+  error or pageerror event. `playwright` added as a devDependency.
+
+This bug was silent and unobservable for the entire life of the project
+because the existing test layer is protocol-level (orchestrator state
+machine) and never exercised the rendered page. The Playwright layer
+closes that gap.
+
 ## 0.11.2 — 2026-05-11
 
 Live-verification fix on top of the v0.11.1 dry-run runs. The harness was
