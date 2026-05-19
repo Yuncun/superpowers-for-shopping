@@ -5,7 +5,7 @@
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
 import { createStore } from './state.js';
-import { renderPage } from './render.js';
+import { renderPage as defaultRenderPage } from './render.js';
 
 // Maximum POST body size (bytes).
 const MAX_BODY = 16384;
@@ -31,6 +31,7 @@ function writeEvent(res, eventName, data) {
  * @param {function} [opts.randomBytes]                   - injectable for tests.
  * @param {number}   [opts.idleThresholdMs=5*60*1000]    - sessions idle longer than this are closed.
  * @param {number}   [opts.idleSweepMs=60*1000]          - how often the sweep runs.
+ * @param {function} [opts.render]                       - per-session page renderer; defaults to the /cart-flow page.
  * @returns {Promise<{baseUrl, createSession, getSession, shutdown}>}
  */
 export async function startServer({
@@ -39,6 +40,7 @@ export async function startServer({
   randomBytes = crypto.randomBytes,
   idleThresholdMs = 5 * 60 * 1000,
   idleSweepMs = 60 * 1000,
+  render = defaultRenderPage,
 } = {}) {
   const store = createStore({ now, randomBytes });
 
@@ -227,7 +229,7 @@ export async function startServer({
       const session = resolveSession(res, id, token);
       if (!session) return;
 
-      const body = renderPage({ id, token, baseUrl });
+      const body = render({ id, token, baseUrl });
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',

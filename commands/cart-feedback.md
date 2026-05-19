@@ -3,19 +3,35 @@ description: Mark recent /cart purchases as kept or returned.
 argument-hint: (no arguments)
 ---
 
-The user just ran `/cart-feedback`. Walk them through marking their pending purchases.
+The user just ran `/cart-feedback`.
 
-1. Run `node ${CLAUDE_PLUGIN_ROOT}/bin/cart.js list-pending` to get the pending purchases (jsonlines format).
+Run this Bash command:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/bin/cart-feedback-flow.js"
+```
 
-2. If the output is empty: tell the user "No pending purchases to review" and stop.
+This is an interactive flow. The script will:
+1. Read pending purchases from the user's profile.
+2. If there are none, exit immediately with `outcome=empty`.
+3. Otherwise, open a browser tab showing every pending purchase as a Kept / Returned / Skip checklist with an optional notes field per item.
+4. Wait for the user to click **Save feedback** (or **Cancel**).
+5. Persist each Kept/Returned decision to `profile.md` (Skip rows stay pending).
 
-3. Otherwise, for each pending purchase (process in order, one at a time):
+While the script is running, the user is interacting with their browser. Don't interrupt. Surface the final outcome (last line of stdout) when the script exits.
 
-   - Ask: "Did you keep the {item} from {brand} (purchased {date} for ${price})? [yes / no / skip]"
-   - Allow optional notes after the yes/no answer.
-   - On `yes` or `no`: run `node ${CLAUDE_PLUGIN_ROOT}/bin/cart.js feedback "<date>" "<item>" "<brand>" "<yes|no>" "<notes>"`. Surface the result.
-   - On `skip`: don't call the script; move to the next pending purchase.
+Map the outcome to a one-line message:
+- `outcome=empty` → "No pending purchases to review."
+- `outcome=success kept=K returned=R skipped=S errors=0` → "Saved — K kept, R returned, S skipped."
+- `outcome=success ... errors=N` (N>0) → "Saved with N issue(s); see stderr above."
+- `outcome=dismissed` → "Canceled — nothing saved."
+- `outcome=flow_error reason="..."` → "Couldn't open the feedback window: <reason>."
 
-4. When done with all pending purchases: thank the user briefly.
+Tone: brisk and warm. Don't lecture.
 
-Keep the tone brisk and warm. Don't lecture. Aim for under 30s total time.
+## Add a permission allowlist hint (optional)
+
+If the user hits a permission prompt for the `node` invocation, suggest adding this to their `~/.claude/settings.json` `permissions.allow` list:
+
+```
+"Bash(node \"${CLAUDE_PLUGIN_ROOT}/bin/cart-feedback-flow.js\":*)"
+```

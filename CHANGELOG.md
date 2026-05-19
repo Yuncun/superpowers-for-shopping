@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.12.1 — 2026-05-19
+
+`/cart-feedback` now opens a one-page browser UI instead of walking through
+prompts in chat. Marking 3 pending purchases dropped from 6+ Q&A turns to a
+single checklist with a Save button.
+
+- New `server/render-feedback.js`: self-contained HTML page that lists every
+  pending purchase as a Kept / Returned / Skip checklist with an optional
+  notes field per item. Matches the visual language of the existing /cart
+  page.
+- New `lib/feedback-flow.js`: pure orchestrator. Same dep-injection shape as
+  `lib/flow.js`. Tallies kept/returned/skipped/errors and pushes a `done`
+  state with the summary before shutdown.
+- New `bin/cart-feedback-flow.js`: CLI shim wiring real deps. Emits the
+  same `__CART_FEEDBACK_URL__` sentinel + final `outcome=…` line pattern as
+  `cart-flow.js`, so existing harness conventions still apply.
+- `server/ui.js` now accepts an injected `render` opt (default unchanged) so
+  one HTTP/SSE plumbing layer can serve different page types.
+- `commands/cart-feedback.md` rewritten to invoke the new flow script — no
+  more sequential "did you keep X?" prompting.
+
+Skip rows stay pending (`kept='?'`), so they show up again on the next run.
+
+The chat-walkthrough complaint also applies to `/cart-setup` (6-section
+wizard) and to a lesser extent `/cart-rule`. Those are larger refactors
+and tracked separately; this release fixes only the most painful one.
+
 ## 0.12.0 — 2026-05-11
 
 Real Shopify search. The previous `search()` was hitting `/products.json?q=…`,

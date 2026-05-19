@@ -1,6 +1,6 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Low-friction helper Claude Code plugin for considered purchases",
   "type": "module",
   "private": true,
@@ -10,6 +10,7 @@
   "bin": {
     "cart": "./bin/cart.js",
     "cart-flow": "./bin/cart-flow.js",
+    "cart-feedback-flow": "./bin/cart-feedback-flow.js",
     "retailers": "./bin/retailers.js"
   },
   "scripts": {
