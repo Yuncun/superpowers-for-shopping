@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.13.0 — 2026-05-19
+
+`/cart-setup` now uses the same single-page UI pattern as `/cart-feedback`.
+The 6-section chat wizard (sizes → budget → brands → fit notes → diff →
+confirm → optional moodboard) becomes one form: every field visible at
+once, pre-populated from the existing profile, one Save button.
+
+- New `server/render-setup.js`: form page with sections for Sizes, Budget,
+  Brands, Fit notes, and Optional (moodboard). Palette is intentionally
+  excluded — it's filled by /cart thumb signals, not setup
+  (anti-pattern per the prior `commands/cart-setup.md`).
+- New `lib/setup-flow.js`: pure orchestrator with `mergeSubmittedProfile`
+  + `diffProfiles` helpers. Object fields (sizes / budget_caps /
+  fit_notes) merge per-key; empty string clears a key, missing key
+  preserves it. Arrays (brands_love / brands_avoid) replace wholesale.
+  Untouched fields (palette, purchase_history, thumb_signals) survive.
+- New `bin/cart-setup-flow.js`: CLI shim, same sentinel + outcome pattern
+  as the other flows.
+- `commands/cart-setup.md` rewritten to invoke the flow script. No more
+  one-question-per-turn gap-fill.
+- On validation failure or write failure, the form re-renders with the
+  errors inline rather than aborting.
+
+Tests: 9 render assertions (including palette-absence and the
+inline-script-parses guard), 15 flow unit tests covering merge / diff /
+validation-retry / write-failure-retry, 3 e2e tests that drive the real
+subprocess and verify profile.md gets written with submitted values plus
+preserved untouched fields.
+
+`/cart-rule` still uses a chat walkthrough — it's a one-shot
+single-input confirmation, not a multi-step wizard, so the UI win is
+smaller. Tracked but not addressed here.
+
 ## 0.12.1 — 2026-05-19
 
 `/cart-feedback` now opens a one-page browser UI instead of walking through
