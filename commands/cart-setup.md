@@ -1,35 +1,16 @@
 ---
-description: Set up or update your shopping profile in a single-page form.
+description: [deprecated] Use /cart-profile instead. Opens the Profile tab.
 ---
 
-The user just ran `/cart-setup`.
+The user just ran `/cart-setup`. As of v0.14.0 this command is a deprecated alias for `/cart-profile`.
 
 Run this Bash command:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/bin/cart-setup-flow.js"
+node "${CLAUDE_PLUGIN_ROOT}/bin/cart-profile-flow.js" --tab=profile
 ```
 
-This is an interactive flow. The script will:
-1. Read the user's existing profile (creating defaults if none exists).
-2. Open a browser tab showing a single form pre-populated with their current values: sizes, budget, brands, fit notes, optional moodboard URL.
-3. Wait for the user to click **Save profile** (or **Cancel**).
-4. Validate and write the merged profile to `~/.claude/cart/profile.md`.
+When the script exits, surface the outcome (last line of stdout), then add a one-liner:
 
-While the script is running, the user is interacting with their browser. Don't interrupt. Surface the final outcome (last line of stdout) when the script exits.
+> Heads up: `/cart-setup` is now part of `/cart-profile` (Profile tab). Same UI either way.
 
-Map the outcome to a one-line message:
-- `outcome=success changes=N` (N>0) → "Profile saved — N field(s) updated."
-- `outcome=success changes=0`     → "Profile saved; no changes."
-- `outcome=dismissed`              → "Canceled — nothing saved."
-- `outcome=flow_error reason="..."` → "Couldn't open the setup window: <reason>."
-
-The list of changed fields is printed on stderr (one per line, indented). Surface it verbatim if there are any.
-
-## Anti-patterns
-
-- **Don't ask follow-up questions.** The form covers everything — sizes, budget, brands, fit notes, moodboard URL. If the user has more to say, they'll say it.
-- **Don't auto-launch /cart afterward.** Saving the profile is the end of the task.
-
-## Tone
-
-Brisk and warm. Don't lecture.
+Outcome mapping is identical to `/cart-profile` — see `commands/cart-profile.md`.

@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.14.0 — 2026-05-23
+
+Five commands → two. `/cart` (shop) and `/cart-profile` (one tabbed UI
+covering everything else). The four other commands stay alive as
+deprecated aliases that just open the new UI on the right tab.
+
+### Why
+
+The plugin had grown to five slash commands: `/cart`, `/cart-setup`,
+`/cart-feedback`, `/cart-retailers`, `/cart-rule`. Each was sensible in
+isolation, but together they were more than anyone needed to remember,
+and the "which command edits what" cognitive load only got worse as new
+fields landed.
+
+### What
+
+- **New `/cart-profile`** — one browser page with three tabs:
+  - **Profile** — sizes, budget, brands, fit notes, optional moodboard.
+    Same form as the old `/cart-setup`.
+  - **Retailers** — list of stores `/cart` searches, with add/remove
+    buttons. Replaces the `/cart-retailers list|add|remove` CLI subcommands.
+    (The `login` subcommand has been dropped for now — open a /cart and
+    use the agent-browser session if you need to authenticate.)
+  - **Feedback** — pending purchases checklist, same as the old
+    `/cart-feedback`.
+
+  Page stays open until the user closes the tab. Each tab has its own
+  Save button; saves are independent so the user can edit a few things
+  on one tab and ignore the others. After each save the server pushes
+  a fresh full snapshot and a success/error banner on the relevant tab.
+
+- **Deprecated commands** — `/cart-setup`, `/cart-feedback`,
+  `/cart-retailers`, `/cart-rule` now all just open `/cart-profile`
+  pre-selected to the relevant tab, and emit a one-liner noting the
+  migration. Marked `[deprecated]` in their descriptions.
+
+- **`/cart-rule` removed-as-feature**: the natural-language
+  "promote a rule" shortcut is gone. The Profile tab exposes every
+  field explicitly, so adding "Shein" to `brands_avoid` is one click —
+  no NL parser worth its weight.
+
+### Implementation
+
+- `server/render-profile.js` — tabbed page; tab content composes the
+  same renderer patterns used by the now-superseded `render-feedback.js`
+  and `render-setup.js`.
+- `lib/profile-flow.js` — long-lived orchestrator dispatching on
+  `submit-profile / submit-retailer-add / submit-retailer-remove /
+  submit-feedback / dismissed`. Re-pushes a full snapshot after every
+  action.
+- `bin/cart-profile-flow.js` — CLI shim. Accepts `--tab=<name>` so the
+  deprecated aliases can deep-link.
+
+### Tests
+
+8 render assertions (parse-guard, tab presence, action coverage,
+palette-absence). 11 flow unit tests covering every action type,
+validation failure, retailer error mapping, snapshot refresh after each
+write, and shutdown-on-exception. 4 e2e tests that drive the real
+subprocess via SSE + POST and assert profile.md / retailers.md get
+written and the `--tab=` deep-link arrives in the snapshot.
+
+330 → 353 tests, all green.
+
+### What might come back
+
+If two or three users tell us the muscle memory of `/cart-feedback`
+mattered more than the consolidation, we can promote it back to a
+first-class command — it's already wired and tested. Same for
+`/cart-rule` if the NL shortcut turns out to be load-bearing.
+
 ## 0.13.0 — 2026-05-19
 
 `/cart-setup` now uses the same single-page UI pattern as `/cart-feedback`.

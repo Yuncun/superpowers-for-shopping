@@ -1,34 +1,17 @@
 ---
-description: Promote a natural-language preference into a hard profile rule.
-argument-hint: "<rule in natural language>"
+description: [deprecated] Use /cart-profile instead. Edit brands/fit/sizes directly on the Profile tab.
+argument-hint: (arguments ignored)
 ---
 
-The user just ran `/cart-rule $ARGUMENTS`. Their rule is a free-form preference they want enforced going forward.
+The user just ran `/cart-rule`. As of v0.14.0 this command is a deprecated alias for `/cart-profile`. The natural-language "promote a rule" shortcut has been removed — the Profile tab now exposes every field explicitly, so adding "Shein" to `brands_avoid` is one click.
 
-Walk them through promoting it to a structured profile rule:
+Run this Bash command:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/bin/cart-profile-flow.js" --tab=profile
+```
 
-1. Run `node ${CLAUDE_PLUGIN_ROOT}/bin/cart.js show` and parse the JSON output to understand the current profile.
+When the script exits, surface the outcome (last line of stdout), then add a one-liner:
 
-2. Parse the user's rule. Map it to ONE of these update shapes:
-   - **Banned brand:** `brands_avoid` += `[<brand>]`
-   - **Loved brand:** `brands_love` += `[<brand>]`
-   - **Fit preference:** `fit_notes.<category>` = `<string>` (category is sweater/pants/shoes/etc, inferred from the rule)
-   - **Size:** `sizes.<axis>` = `<value>` (axis is top/bottom/shoes)
-   - **Palette:** `palette` += `[<color>]` or `palette` -= `[<color>]`
-   - **Budget:** `budget_caps.<category>` = `<number>`
+> Heads up: `/cart-rule` has been folded into `/cart-profile`. Edit `brands_love` / `brands_avoid` / `fit_notes` / `sizes` directly on the Profile tab. Any arguments you passed were ignored.
 
-   If the rule doesn't fit any of these, tell the user "I can't translate that into a structured rule. Try something more specific like 'never show me Shein' or 'I always wear size M tops'."
-
-3. Show the user the proposed change in a clear diff:
-
-   ```
-   Proposed change:
-     brands_avoid: [Shein] → [Shein, Temu]
-   Confirm? [y/n]
-   ```
-
-4. On `y`: run `node ${CLAUDE_PLUGIN_ROOT}/bin/cart.js set <key>=<json-value>` to write. The `set` subcommand accepts JSON values, so arrays must be passed as JSON: `brands_avoid='["Shein","Temu"]'`. Print the success and exit.
-
-5. On `n`: discard and tell the user "Got it, no change."
-
-Tone: brisk, no lecturing.
+Outcome mapping is identical to `/cart-profile` — see `commands/cart-profile.md`.

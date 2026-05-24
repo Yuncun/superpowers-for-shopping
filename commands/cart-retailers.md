@@ -1,28 +1,17 @@
 ---
-description: List or manage the retailers your /cart flow searches.
-argument-hint: list | add <host> | remove <host> | login <host>
+description: [deprecated] Use /cart-profile instead. Opens the Retailers tab.
+argument-hint: (arguments ignored)
 ---
 
-The user just ran `/cart-retailers $ARGUMENTS`.
+The user just ran `/cart-retailers`. As of v0.14.0 this command is a deprecated alias for `/cart-profile`. The previous `list | add | remove | login` subcommands are now handled directly in the UI's Retailers tab. Any arguments are ignored.
 
-Parse `$ARGUMENTS`:
-- If empty or `list` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js list` and surface output.
-- If starts with `add ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js add <host>` and surface output.
-- If starts with `remove ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js remove <host>` and surface output.
-- If starts with `login ` → run `node ${CLAUDE_PLUGIN_ROOT}/bin/retailers.js login <host>` and surface output.
+Run this Bash command:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/bin/cart-profile-flow.js" --tab=retailers
+```
 
-For `add`: surface a friendly message based on outcome.
-  - `added=<host>`: "Added <host> to your retailers list."
-  - `error=duplicate`: "<host> is already in your list."
-  - `error=not_shopify`: "<host> isn't a Shopify-detected store. v0.6.0 only supports Shopify retailers."
-  - `error=invalid_host`: "That host doesn't look right. Pass a bare domain like `marinelayer.com`."
+When the script exits, surface the outcome (last line of stdout), then add a one-liner:
 
-For `remove`: surface a friendly message based on outcome.
-  - `removed=<host>`: "Removed <host> from your retailers list."
-  - `error=not_found`: "<host> isn't in your list."
+> Heads up: `/cart-retailers` is now part of `/cart-profile` (Retailers tab). Add/remove from the UI directly. The `login <host>` subcommand has been removed for now — open a /cart and use the agent-browser session if you need to authenticate.
 
-For `login`: surface a friendly message based on outcome.
-  - `opened=<host>`: "Opening the login page for <host> in your browser. Come back and run `/cart` once you're logged in."
-  - `error=<code>`: "Couldn't open the login page for <host>: <code>."
-
-For `list`: display the retailers as a table showing host, tier, handler, and last used date.
+Outcome mapping is identical to `/cart-profile` — see `commands/cart-profile.md`.
