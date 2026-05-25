@@ -33,7 +33,7 @@ test('profile: renders three tabs (Profile, Retailers, Feedback)', () => {
   const html = renderPage(BASE);
   assert.ok(html.includes("label: 'Profile'"), 'missing Profile tab');
   assert.ok(html.includes("label: 'Retailers'"), 'missing Retailers tab');
-  assert.ok(html.includes("label: 'Feedback'"), 'missing Feedback tab');
+  assert.ok(!html.includes("label: 'Feedback'"), 'Feedback tab must be gone (rot removed)');
 });
 
 test('profile: dispatches all expected action types', () => {
@@ -42,11 +42,11 @@ test('profile: dispatches all expected action types', () => {
     'submit-profile',
     'submit-retailer-add',
     'submit-retailer-remove',
-    'submit-feedback',
     'dismissed',
   ]) {
     assert.ok(html.includes(`'${type}'`), `missing action type: ${type}`);
   }
+  assert.ok(!html.includes("'submit-feedback'"), 'submit-feedback must be gone (rot removed)');
 });
 
 test('profile: does not include palette field (anti-pattern)', () => {

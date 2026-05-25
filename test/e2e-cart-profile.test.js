@@ -16,17 +16,9 @@ const CLI = path.resolve(HERE, '..', 'bin', 'cart-profile-flow.js');
 const SENTINEL_RE = /^__CART_PROFILE_URL__\s+(\S+)$/m;
 const OUTCOME_RE = /^outcome=(\w+)(.*)$/m;
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-async function seedHome(home, { profile, retailers, pending } = {}) {
+async function seedHome(home, { retailers } = {}) {
   const dir = path.join(home, '.claude/cart');
   await fs.mkdir(dir, { recursive: true });
-
-  const profilePending = (pending || []).map(
-    (r) => `| ${r.date} | ${r.item} | ${r.brand} | ${r['$']} | ${r.kept ?? '?'} | ${r.notes ?? ''} |`,
-  ).join('\n');
 
   const profileMd =
     '---\n' +
@@ -41,13 +33,8 @@ async function seedHome(home, { profile, retailers, pending } = {}) {
     'last_setup: null\n' +
     '---\n\n' +
     '# Purchase history\n' +
-    '| date | item | brand | $ | kept | notes |\n' +
-    '|---|---|---|---|---|---|\n' +
-    profilePending +
-    ((pending || []).length ? '\n' : '') +
-    '\n# Thumb signals\n' +
-    '| date | category | up | down |\n' +
-    '|---|---|---|---|\n\n';
+    '| date | item | brand | $ | url |\n' +
+    '|---|---|---|---|---|\n\n';
   await fs.writeFile(path.join(dir, 'profile.md'), profileMd);
 
   if (retailers) {
@@ -64,10 +51,6 @@ async function seedHome(home, { profile, retailers, pending } = {}) {
 
 async function readProfileRaw(home) {
   return fs.readFile(path.join(home, '.claude/cart/profile.md'), 'utf8');
-}
-
-async function readRetailersRaw(home) {
-  return fs.readFile(path.join(home, '.claude/cart/retailers.md'), 'utf8');
 }
 
 function waitForSentinel(proc) {
@@ -175,25 +158,20 @@ async function runFlow({ home, extraArgs = [], choose }) {
 // tests
 // ---------------------------------------------------------------------------
 
-test('e2e: initial snapshot includes profile/retailers/pending', async () => {
+test('e2e: initial snapshot includes profile and retailers (no pending)', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'profile-e2e-'));
-  await seedHome(home, {
-    pending: [{ date: '2026-05-12', item: 'Trunk', brand: 'ML', '$': '94.00' }],
-  });
+  await seedHome(home);
 
-  // Use empty retailers store (which auto-initializes to defaults on first read).
   let acted = false;
   const result = await runFlow({
     home,
     choose: (state) => {
       if (state.stage !== 'main' || acted) return null;
       acted = true;
-      // Verify snapshot shape, then dismiss.
       assert.equal(state.stage, 'main');
       assert.ok(state.profile);
       assert.ok(Array.isArray(state.retailers));
-      assert.ok(Array.isArray(state.pending));
-      assert.equal(state.pending.length, 1);
+      assert.ok(!('pending' in state), 'pending field should be gone');
       return { type: 'dismissed' };
     },
   });
@@ -208,8 +186,7 @@ test('e2e: submit-profile persists merged profile and preserves palette', async 
   await fs.writeFile(path.join(home, '.claude/cart/profile.md'),
     '---\nsizes: {top: M}\nbudget_default: mid\nbudget_caps: {}\npalette: [navy, cream]\n' +
     'brands_love: [Uniqlo]\nbrands_avoid: []\nfit_notes: {}\nmoodboard_url: \'\'\nlast_setup: null\n---\n\n' +
-    '# Purchase history\n| date | item | brand | $ | kept | notes |\n|---|---|---|---|---|---|\n\n' +
-    '# Thumb signals\n| date | category | up | down |\n|---|---|---|---|\n\n');
+    '# Purchase history\n| date | item | brand | $ | url |\n|---|---|---|---|---|\n\n');
 
   let submitted = false;
   await runFlow({
@@ -220,7 +197,6 @@ test('e2e: submit-profile persists merged profile and preserves palette', async 
         submitted = true;
         return { type: 'submit-profile', profile: { budget_default: 'high', brands_love: ['Patagonia'] } };
       }
-      // After save, banner state arrives; dismiss.
       if (state.banner && state.banner.kind === 'success') return { type: 'dismissed' };
       return null;
     },
@@ -229,51 +205,12 @@ test('e2e: submit-profile persists merged profile and preserves palette', async 
   const profile = await readProfileRaw(home);
   assert.match(profile, /budget_default: high/);
   assert.match(profile, /- Patagonia/);
-  // Untouched survived.
   assert.match(profile, /- navy/);
   assert.match(profile, /- cream/);
-  // sizes.top preserved because submitted didn't include it.
   assert.match(profile, /top: M/);
 });
 
-test('e2e: submit-feedback writes only non-skip rows and pending refreshes', async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'profile-e2e-'));
-  await seedHome(home, {
-    pending: [
-      { date: '2026-05-12', item: 'A', brand: 'X', '$': '10' },
-      { date: '2026-05-12', item: 'B', brand: 'Y', '$': '20' },
-    ],
-  });
-
-  let submitted = false;
-  await runFlow({
-    home,
-    choose: (state) => {
-      if (state.stage !== 'main') return null;
-      if (!submitted) {
-        submitted = true;
-        return {
-          type: 'submit-feedback',
-          items: [
-            { date: '2026-05-12', item: 'A', brand: 'X', decision: 'yes',  notes: 'great' },
-            { date: '2026-05-12', item: 'B', brand: 'Y', decision: 'skip', notes: '' },
-          ],
-        };
-      }
-      if (state.banner && (state.banner.kind === 'success' || state.banner.kind === 'error')) {
-        return { type: 'dismissed' };
-      }
-      return null;
-    },
-  });
-
-  const profile = await readProfileRaw(home);
-  assert.match(profile, /A \| X \| 10 \| yes \| great/);
-  // Skipped row stays pending.
-  assert.match(profile, /B \| Y \| 20 \| \?/);
-});
-
-test('e2e: deprecated alias --tab=feedback opens with initialTab set', async () => {
+test('e2e: --tab=retailers opens with initialTab set', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'profile-e2e-'));
   await seedHome(home);
 
@@ -281,7 +218,7 @@ test('e2e: deprecated alias --tab=feedback opens with initialTab set', async () 
   let acted = false;
   await runFlow({
     home,
-    extraArgs: ['--tab=feedback'],
+    extraArgs: ['--tab=retailers'],
     choose: (state) => {
       if (state.stage !== 'main' || acted) return null;
       acted = true;
@@ -290,5 +227,5 @@ test('e2e: deprecated alias --tab=feedback opens with initialTab set', async () 
     },
   });
 
-  assert.equal(seenInitialTab, 'feedback');
+  assert.equal(seenInitialTab, 'retailers');
 });

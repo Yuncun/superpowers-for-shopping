@@ -6,10 +6,7 @@ import {
   writeProfile,
   validateProfile,
   appendPurchase,
-  appendThumbSignal,
   updateFrontmatter,
-  listPendingPurchases,
-  updatePurchase,
 } from '../lib/profile.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -24,10 +21,8 @@ test('getDefaultProfile returns expected schema', () => {
   assert.ok(Array.isArray(p.brands_love));
   assert.ok(Array.isArray(p.brands_avoid));
   assert.equal(p.moodboard_url, '');
-  assert.ok(p.purchase_history);
-  assert.ok(p.thumb_signals);
+  assert.ok(Array.isArray(p.purchase_history));
   assert.equal(p.purchase_history.length, 0);
-  assert.equal(p.thumb_signals.length, 0);
 });
 
 test('readProfile returns default when file does not exist', async () => {
@@ -54,12 +49,8 @@ last_setup: 2026-05-10
 ---
 
 # Purchase history
-| date | item | brand | $ | kept | notes |
-|---|---|---|---|---|---|
-
-# Thumb signals
-| date | category | up | down |
-|---|---|---|---|
+| date | item | brand | $ | url |
+|---|---|---|---|---|
 `);
   const p = await readProfile();
   assert.equal(p.sizes.top, 'M');
@@ -97,11 +88,7 @@ test('writeProfile creates the cart dir if missing', async () => {
 });
 
 test('validateProfile passes a complete profile', () => {
-  const p = {
-    ...getDefaultProfile(),
-    sizes: { top: 'M' },
-    budget_default: 'mid',
-  };
+  const p = { ...getDefaultProfile(), sizes: { top: 'M' }, budget_default: 'mid' };
   assert.equal(validateProfile(p).valid, true);
 });
 
@@ -135,27 +122,12 @@ test('appendPurchase adds a row to purchase_history', async () => {
     item: 'sweater',
     brand: 'Marine Layer',
     $: '98',
-    kept: '?',
-    notes: 'navy crew',
+    url: 'https://marinelayer.com/products/x',
   });
   const p = await readProfile();
   assert.equal(p.purchase_history.length, 1);
   assert.equal(p.purchase_history[0].brand, 'Marine Layer');
-});
-
-test('appendThumbSignal adds a row to thumb_signals', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendThumbSignal({
-    date: '2026-05-10',
-    category: 'sweater',
-    up: 'ribbed crew',
-    down: 'oversized',
-  });
-  const p = await readProfile();
-  assert.equal(p.thumb_signals.length, 1);
-  assert.equal(p.thumb_signals[0].up, 'ribbed crew');
+  assert.equal(p.purchase_history[0].url, 'https://marinelayer.com/products/x');
 });
 
 test('updateFrontmatter merges shallow fields', async () => {
@@ -177,22 +149,21 @@ test('updateFrontmatter deep-merges fit_notes', async () => {
   assert.equal(p.fit_notes.pants, 'tapered');
 });
 
-// --- Robustness / adversarial-input tests ---
-
 test('writeProfile sanitizes pipe characters in cell values', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
   process.env.HOME = tmp;
   await writeProfile(getDefaultProfile());
-  await appendThumbSignal({
+  await appendPurchase({
     date: '2026-05-10',
-    category: 'sweater',
-    up: 'sleek | minimal',
-    down: 'chunky',
+    item: 'sleek | minimal sweater',
+    brand: 'Marine Layer',
+    $: '98',
+    url: 'https://marinelayer.com/products/x',
   });
   const p = await readProfile();
-  assert.equal(p.thumb_signals.length, 1);
-  assert.ok(!p.thumb_signals[0].up.includes('|'), 'pipe should be sanitized in stored value');
-  assert.equal(p.thumb_signals[0].down, 'chunky', 'subsequent column must not be corrupted');
+  assert.equal(p.purchase_history.length, 1);
+  assert.ok(!p.purchase_history[0].item.includes('|'), 'pipe should be sanitized in stored value');
+  assert.equal(p.purchase_history[0].brand, 'Marine Layer', 'subsequent column must not be corrupted');
 });
 
 test('updateFrontmatter handles null target correctly', async () => {
@@ -213,16 +184,12 @@ budget_default: [unterminated
 ---
 
 # Purchase history
-| date | item | brand | $ | kept | notes |
-|---|---|---|---|---|---|
-
-# Thumb signals
-| date | category | up | down |
-|---|---|---|---|
+| date | item | brand | $ | url |
+|---|---|---|---|---|
 `);
   await assert.rejects(
     () => readProfile(),
-    err => err.message.includes('profile.md') && err.message.toLowerCase().includes('yaml')
+    err => err.message.includes('profile.md') && err.message.toLowerCase().includes('yaml'),
   );
 });
 
@@ -243,12 +210,8 @@ last_setup: 2026-05-10
 ---
 
 # Purchase history
-| date | item | brand | $ | kept | notes |
-|---|---|---|---|---|---|
-
-# Thumb signals
-| date | category | up | down |
-|---|---|---|---|
+| date | item | brand | $ | url |
+|---|---|---|---|---|
 `);
   const p = await readProfile();
   assert.equal(typeof p.last_setup, 'string', 'last_setup must stay a string, not a Date');
@@ -281,17 +244,13 @@ last_setup: 2026-05-10
 ---
 
 # Purchase history
-| date | item | brand | $ | kept | notes |
-|---|---|---|---|---|---|
-| 2026-05-10 | sweater | Marine Layer | 98 | yes | navy crew
-
-# Thumb signals
-| date | category | up | down |
-|---|---|---|---|
+| date | item | brand | $ | url |
+|---|---|---|---|---|
+| 2026-05-10 | sweater | Marine Layer | 98 | https://marinelayer.com/products/x
 `);
   const p = await readProfile();
   assert.equal(p.purchase_history.length, 1);
-  assert.equal(p.purchase_history[0].notes, 'navy crew', 'last column should not be dropped when trailing pipe missing');
+  assert.equal(p.purchase_history[0].url, 'https://marinelayer.com/products/x', 'last column should not be dropped when trailing pipe missing');
 });
 
 test('writeProfile sanitizes newlines in cell values', async () => {
@@ -300,111 +259,12 @@ test('writeProfile sanitizes newlines in cell values', async () => {
   await writeProfile(getDefaultProfile());
   await appendPurchase({
     date: '2026-05-10',
-    item: 'sweater',
+    item: 'sweater\nline2',
     brand: 'Marine Layer',
     $: '98',
-    kept: '?',
-    notes: 'line1\nline2',
+    url: 'https://marinelayer.com/products/x',
   });
   const p = await readProfile();
   assert.equal(p.purchase_history.length, 1, 'newline must not split the row');
-  assert.ok(!p.purchase_history[0].notes.includes('\n'));
-  assert.ok(p.purchase_history[0].notes.includes('line1'));
-  assert.ok(p.purchase_history[0].notes.includes('line2'));
-});
-
-// --- listPendingPurchases + updatePurchase ---
-
-test('listPendingPurchases returns [] on empty profile', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  const result = await listPendingPurchases();
-  assert.deepEqual(result, []);
-});
-
-test('listPendingPurchases returns one row after appending kept=?', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
-  const result = await listPendingPurchases();
-  assert.equal(result.length, 1);
-  assert.equal(result[0].kept, '?');
-  assert.equal(result[0].item, 'sweater');
-});
-
-test('listPendingPurchases ignores rows with kept=yes', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: 'yes', notes: '' });
-  const result = await listPendingPurchases();
-  assert.deepEqual(result, []);
-});
-
-test('updatePurchase matches by (date, item, brand) and sets kept=yes', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
-  const r = await updatePurchase(
-    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
-    { kept: 'yes' },
-  );
-  assert.deepEqual(r, { updated: true });
-  const p = await readProfile();
-  assert.equal(p.purchase_history[0].kept, 'yes');
-});
-
-test('updatePurchase updates notes when provided', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
-  await updatePurchase(
-    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
-    { kept: 'yes', notes: 'loved it' },
-  );
-  const p = await readProfile();
-  assert.equal(p.purchase_history[0].notes, 'loved it');
-});
-
-test('updatePurchase preserves existing notes when notes not provided', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: 'great fit' });
-  await updatePurchase(
-    { date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' },
-    { kept: 'no' },
-  );
-  const p = await readProfile();
-  assert.equal(p.purchase_history[0].notes, 'great fit');
-});
-
-test('updatePurchase returns not_found when no matching row', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  const r = await updatePurchase(
-    { date: '2026-05-10', item: 'nonexistent', brand: 'Nobody' },
-    { kept: 'yes' },
-  );
-  assert.deepEqual(r, { updated: false, reason: 'not_found' });
-  const p = await readProfile();
-  assert.equal(p.purchase_history.length, 0);
-});
-
-test('updatePurchase throws invalid_kept for bad kept value', async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cart-test-'));
-  process.env.HOME = tmp;
-  await writeProfile(getDefaultProfile());
-  await appendPurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer', $: '98', kept: '?', notes: '' });
-  await assert.rejects(
-    () => updatePurchase({ date: '2026-05-10', item: 'sweater', brand: 'Marine Layer' }, { kept: '?' }),
-    err => err.code === 'invalid_kept',
-  );
-  // Profile must be unchanged
-  const p = await readProfile();
-  assert.equal(p.purchase_history[0].kept, '?');
+  assert.ok(!p.purchase_history[0].item.includes('\n'));
 });

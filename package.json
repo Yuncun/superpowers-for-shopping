@@ -1,28 +1,18 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.14.0",
-  "description": "Low-friction helper Claude Code plugin for considered purchases",
+  "version": "1.0.0",
+  "description": "Low-friction shopping for Claude Code: query → populated carts → one Review button.",
   "type": "module",
   "private": true,
   "engines": {
     "node": ">=20"
   },
   "bin": {
-    "cart": "./bin/cart.js",
     "cart-flow": "./bin/cart-flow.js",
-    "cart-feedback-flow": "./bin/cart-feedback-flow.js",
-    "cart-setup-flow": "./bin/cart-setup-flow.js",
-    "cart-profile-flow": "./bin/cart-profile-flow.js",
-    "retailers": "./bin/retailers.js"
+    "cart-profile-flow": "./bin/cart-profile-flow.js"
   },
   "scripts": {
-    "test": "node --test 'test/**/*.test.js'",
-    "smoke:live": "node test/live-marinelayer.js",
-    "smoke:browser": "node test/live-browser.js",
-    "smoke:ui": "node test/live-ui.js",
-    "smoke:flow": "node test/live-flow.js",
-    "e2e:cart": "node test/e2e-cart-flow.js",
-    "e2e:ui": "node test/e2e-cart-ui.mjs"
+    "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

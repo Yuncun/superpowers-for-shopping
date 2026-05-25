@@ -1,12 +1,12 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "0.14.0",
-  "description": "Low-friction helper for considered purchases. Takes 'I need a sweater' to a populated cart with one click.",
+  "version": "1.0.0",
+  "description": "Low-friction shopping. /cart \"a new sweater\" → populated carts at multiple retailers → one Review button.",
   "author": {
     "name": "Eric Shen"
   },
   "homepage": "https://github.com/Yuncun/superpowers-for-shopping",
   "repository": "https://github.com/Yuncun/superpowers-for-shopping",
   "license": "MIT",
-  "keywords": ["shopping", "claude-code", "agent-browser", "shopify"]
+  "keywords": ["shopping", "claude-code", "shopify"]
 }

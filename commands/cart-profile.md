@@ -1,5 +1,5 @@
 ---
-description: One tabbed UI for your shopping profile, retailers, and pending purchase feedback.
+description: Tabbed UI for your shopping profile and retailer list.
 argument-hint: (no arguments)
 ---
 
@@ -10,22 +10,23 @@ Run this Bash command:
 node "${CLAUDE_PLUGIN_ROOT}/bin/cart-profile-flow.js"
 ```
 
-This is an interactive flow. The script opens a browser tab with three tabs:
-- **Profile** — sizes, budget, brands, fit notes, optional moodboard URL.
-- **Retailers** — list of stores `/cart` searches; add or remove.
-- **Feedback** — pending purchases waiting to be marked Kept / Returned / Skip.
+The script opens a browser tab with two tabs:
+- **Profile** — sizes, budget, brands_love, brands_avoid, fit notes, moodboard URL.
+- **Retailers** — the stores `/cart` searches; add or remove.
 
-The page stays open until the user closes the tab (or clicks Cancel where present). Each tab has its own Save button — saves are independent, so they can edit a few things on one tab and ignore the others.
+The page stays open until the user closes the tab. Each tab has its own Save
+button — saves are independent.
 
-While the script is running, the user is interacting with their browser. Don't interrupt. Surface the final outcome (last line of stdout) when the script exits.
+While the script is running, the user is interacting with their browser. Don't
+interrupt. Surface the final outcome (last line of stdout) when the script exits.
 
 Map the outcome to a one-line message:
 - `outcome=success actions=N` (N>0) → "Closed — N change(s) saved."
 - `outcome=success actions=0`     → "Closed — no changes."
-- `outcome=dismissed actions=N`   → same as success (page closed; N may be 0).
+- `outcome=dismissed actions=N`   → same as success (page closed).
 - `outcome=flow_error reason="..."` → "Couldn't open the profile window: <reason>."
 
-Tone: brisk and warm. Don't lecture.
+Tone: brisk and warm.
 
 ## Permission allowlist (optional)
 

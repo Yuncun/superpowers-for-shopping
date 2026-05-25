@@ -1,9 +1,8 @@
 // server/render-profile.js
-// Unified tabbed UI for /cart-profile (Profile | Retailers | Feedback).
-// Replaces /cart-setup, /cart-retailers, /cart-feedback as separate commands.
+// Tabbed UI for /cart-profile (Profile | Retailers).
 //
 // State pushed by the server is the full snapshot:
-//   { stage: 'main', profile, retailers, pending, initialTab?, banner? }
+//   { stage: 'main', profile, retailers, initialTab?, banner? }
 //
 // banner: { tab, kind: 'success' | 'error' | 'info', text } — surfaced as a
 // dismissible toast on the named tab.
@@ -12,7 +11,6 @@
 //   { type: 'submit-profile', profile }
 //   { type: 'submit-retailer-add', host }
 //   { type: 'submit-retailer-remove', host }
-//   { type: 'submit-feedback', items: [...] }
 //   { type: 'dismissed' }
 
 function safeJsonEmbed(value) {
@@ -131,7 +129,7 @@ main#root{
 
 .banner button:hover{opacity:1}
 
-/* ---------- Profile / Retailers / Feedback sections ---------- */
+/* ---------- Profile / Retailers sections ---------- */
 
 .section{
   background:#fff;
@@ -242,47 +240,6 @@ main#root{
   border:1px dashed #e0e0e0;border-radius:8px;
 }
 
-/* ---------- Feedback tab ---------- */
-
-.purchase{
-  background:#fff;border:1px solid #e8e8e8;border-radius:12px;
-  padding:16px 18px;margin-bottom:12px;transition:opacity .2s;
-}
-
-.purchase-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-.purchase-meta{flex:1;min-width:0}
-
-.purchase-brand{
-  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
-  color:#888;margin-bottom:3px;
-}
-
-.purchase-title{font-size:14px;font-weight:500;line-height:1.35;word-break:break-word}
-.purchase-price{font-size:14px;color:#1a1a1a;font-weight:600;white-space:nowrap}
-.purchase-date{font-size:12px;color:#aaa;font-weight:400;margin-left:6px}
-
-.choices{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-.choice{flex:1;min-width:80px;position:relative}
-.choice input{position:absolute;opacity:0;pointer-events:none}
-
-.choice label{
-  display:block;text-align:center;border:1px solid #e8e8e8;background:#fafafa;
-  border-radius:8px;padding:8px 8px;font-size:13px;cursor:pointer;user-select:none;
-  transition:background .12s,border-color .12s,color .12s;
-}
-
-.choice label:hover{background:#f0f0f0;border-color:#ccc}
-.choice input:checked + label{background:#1a1a1a;border-color:#1a1a1a;color:#fff}
-
-.notes{
-  width:100%;font:inherit;font-size:13px;padding:8px 11px;
-  border:1px solid #e8e8e8;border-radius:8px;background:#fff;color:#1a1a1a;
-  transition:border-color .12s;
-}
-
-.notes:focus{outline:none;border-color:#888}
-.notes::placeholder{color:#bbb}
-
 /* ---------- common ---------- */
 
 .center-msg{
@@ -392,7 +349,6 @@ window.__SESSION__ = ${sessionJson};
     var tabs = [
       { key: 'profile',   label: 'Profile' },
       { key: 'retailers', label: 'Retailers', badge: (state.retailers || []).length },
-      { key: 'feedback',  label: 'Feedback',  badge: (state.pending || []).length },
     ];
     tabsEl.innerHTML = '';
     tabs.forEach(function(t) {
@@ -421,7 +377,6 @@ window.__SESSION__ = ${sessionJson};
     contentEl.innerHTML = '';
     if (activeTab === 'profile')   renderProfileTab();
     if (activeTab === 'retailers') renderRetailersTab();
-    if (activeTab === 'feedback')  renderFeedbackTab();
     renderBanner();
   }
 
@@ -750,115 +705,6 @@ window.__SESSION__ = ${sessionJson};
     contentEl.appendChild(wrap);
   }
 
-  // ---- feedback tab ----
-
-  function renderFeedbackTab() {
-    var pending = state.pending || [];
-    var wrap = document.createElement('div');
-
-    var intro = document.createElement('p');
-    intro.className = 'intro';
-    intro.textContent = pending.length === 0
-      ? 'Nothing to review — recent /cart purchases will show up here.'
-      : 'Tell me what stuck. Default is Skip — only Kept/Returned items get recorded.';
-    wrap.appendChild(intro);
-
-    if (pending.length === 0) {
-      contentEl.appendChild(wrap);
-      return;
-    }
-
-    var nameCounter = 0;
-    pending.forEach(function(p) {
-      nameCounter++;
-      var groupName = 'kept-' + nameCounter;
-
-      var card = document.createElement('div');
-      card.className = 'purchase';
-      card.dataset.key = JSON.stringify({ date: p.date, item: p.item, brand: p.brand });
-
-      var head = document.createElement('div');
-      head.className = 'purchase-head';
-
-      var meta = document.createElement('div');
-      meta.className = 'purchase-meta';
-      meta.innerHTML =
-        '<div class="purchase-brand">' + escHtml(p.brand || '') + '</div>' +
-        '<div class="purchase-title">' + escHtml(p.item || '') +
-          '<span class="purchase-date">' + escHtml(p.date || '') + '</span>' +
-        '</div>';
-
-      var price = document.createElement('div');
-      price.className = 'purchase-price';
-      price.textContent = fmtPrice(p['$']);
-
-      head.appendChild(meta);
-      head.appendChild(price);
-
-      var choices = document.createElement('div');
-      choices.className = 'choices';
-      ['skip','yes','no'].forEach(function(value) {
-        var labelText = value === 'yes' ? 'Kept' : value === 'no' ? 'Returned' : 'Skip';
-        var choice = document.createElement('div');
-        choice.className = 'choice';
-        var input = document.createElement('input');
-        input.type = 'radio';
-        input.name = groupName;
-        input.value = value;
-        input.id = groupName + '-' + value;
-        if (value === 'skip') input.checked = true;
-        var label = document.createElement('label');
-        label.htmlFor = input.id;
-        label.textContent = labelText;
-        choice.appendChild(input);
-        choice.appendChild(label);
-        choices.appendChild(choice);
-      });
-
-      var notes = document.createElement('input');
-      notes.type = 'text';
-      notes.className = 'notes';
-      notes.placeholder = 'Notes (optional)';
-      notes.dataset.notes = '1';
-      notes.maxLength = 200;
-
-      card.appendChild(head);
-      card.appendChild(choices);
-      card.appendChild(notes);
-      wrap.appendChild(card);
-    });
-
-    var bar = document.createElement('div');
-    bar.className = 'actions-bar';
-
-    var submitBtn = document.createElement('button');
-    submitBtn.type = 'button';
-    submitBtn.className = 'btn-primary';
-    submitBtn.textContent = 'Save feedback';
-    submitBtn.addEventListener('click', function() {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Saving…';
-      var items = [];
-      wrap.querySelectorAll('.purchase').forEach(function(card) {
-        var key;
-        try { key = JSON.parse(card.dataset.key); } catch (e) { return; }
-        var checked = card.querySelector('input[type="radio"]:checked');
-        var decision = checked ? checked.value : 'skip';
-        var notesEl = card.querySelector('input[data-notes]');
-        var notesVal = notesEl ? notesEl.value.trim() : '';
-        items.push({
-          date: key.date, item: key.item, brand: key.brand,
-          decision: decision, notes: notesVal,
-        });
-      });
-      sendAction({ type: 'submit-feedback', items: items });
-    });
-
-    bar.appendChild(submitBtn);
-    wrap.appendChild(bar);
-
-    contentEl.appendChild(wrap);
-  }
 })();
 </script>
 </body>

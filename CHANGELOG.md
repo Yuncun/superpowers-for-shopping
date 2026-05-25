@@ -1,5 +1,84 @@
 # Changelog
 
+## 1.0.0 — 2026-05-24
+
+"Threat Mode." `/cart` no longer asks for input mid-flow. Query → spinner →
+five picks already in real carts at the retailers → one **Review** button that
+opens those carts in new tabs.
+
+### Why
+
+The thumbs-up/down step was the bug. The whole point of the plugin is to skip
+the "decide to shop" moment; asking for aesthetic input on 8 cards just moves
+that decision earlier in the flow. For a user who hates shopping, being
+*confronted* with a populated cart is easier than being *asked* to pick.
+
+The post-purchase "did you keep it?" loop had the same shape — it asked the
+user to recall, days later, what they bought. Stale duplicates piled up. Cut.
+
+### What
+
+- **`/cart` rewrite.** Query → parallel search across retailers → profile
+  filter (`brands_avoid`, `budget_caps`) → diversified picks (5 items, ~2 per
+  store) → grid of cards in browser → one "Review your N carts" button.
+- **Shopify cart permalinks.** Clicking Review opens
+  `https://<host>/cart/<v1>:1,<v2>:1,...` for each retailer involved. The
+  retailer adds the variants to the user's *real* logged-in cart and redirects
+  to `/cart`. We never touch cookies from Node.
+- **Same-product dedup.** Pipe-separated color suffixes (`"Boxy Sweater | Navy"`
+  vs `"... | Skywriting"`) and same-handle relistings collapse to one pick.
+- **Dynamic per-retailer cap.** With one retailer returning results we fill
+  the grid from it; with many, we cap at 2 each. Two-phase round-robin with
+  refill always tries to reach 5.
+
+### Cuts (~2,400 LOC)
+
+- Deprecated commands: `/cart-feedback`, `/cart-setup`, `/cart-retailers`,
+  `/cart-rule` (all wrappers around `/cart-profile`).
+- Feedback tab in `/cart-profile`. Purchase-history `kept` / `notes` columns
+  gone — history is now a log, not a to-do list.
+- `SessionStart` hook + `cart-pending-check.js` ("Quick: you have 3 pending
+  purchases…" nudge).
+- `lib/browser.js` (agent-browser cookie scraping) — cart permalinks made it
+  unnecessary.
+- `shopify.js: addToCart` / `fetchVariants` — leftover from the Node-side
+  cart-add path that the permalink approach superseded.
+- `profile.js: listPendingPurchases`, `updatePurchase`, `appendThumbSignal`.
+- Bin scripts: `cart.js`, `retailers.js`, `cart-pending-check.js`,
+  `cart-feedback-flow.js`, `cart-setup-flow.js`.
+- `lib/feedback-flow.js`, `lib/setup-flow.js` (merged what was reachable
+  into `lib/profile-flow.js`).
+- `server/render-feedback.js`, `server/render-setup.js`, the old thumbs-and-
+  cards `render.js`.
+- All e2e/smoke harnesses tied to the old flow (`live-marinelayer.js`,
+  `live-flow.js`, `live-browser.js`, `e2e-cart-ui.mjs`, `cart-harness.js`).
+
+### Tests
+
+228 passing. New: 14 unit tests for the new orchestration (`flow.test.js`,
+`diversify`, `makeTitleKey`), 9 render-page assertions for the new stages, 4
+e2e tests driving the real subprocess via SSE/POST. `npm run smoke:browser`
+and friends are gone with their scripts.
+
+### Permission allowlist
+
+The single allowlist entry now is:
+
+```
+"Bash(node \"${CLAUDE_PLUGIN_ROOT}/bin/cart-flow.js\":*)"
+```
+
+(plus `cart-profile-flow.js` for the settings UI).
+
+### Migration notes
+
+- The four deprecated alias commands are *gone*, not deprecated. If you had
+  muscle memory for `/cart-feedback`, the equivalent doesn't exist anymore
+  by design — the feedback loop is gone.
+- `purchase_history` schema changed: `kept` and `notes` columns removed, `url`
+  column added. Old rows still parse; new ones write the new shape.
+- Default per-retailer set unchanged.
+
 ## 0.14.0 — 2026-05-23
 
 Five commands → two. `/cart` (shop) and `/cart-profile` (one tabbed UI

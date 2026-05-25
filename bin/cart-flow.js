@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // bin/cart-flow.js
-// CLI shim: parse argv, wire real deps, run runCartFlow, print structured outcome, exit.
+// CLI shim: parse argv, wire real deps, run runCartFlow, print outcome, exit.
 
 import { execFile } from 'node:child_process';
 import { readProfile, appendPurchase, updateFrontmatter } from '../lib/profile.js';
 import { readRetailers } from '../lib/retailers-store.js';
-import { search, addToCart } from '../lib/retailers/shopify.js';
-import { getCookieHeader, openLoginPage } from '../lib/browser.js';
+import { search, buildCartPermalink } from '../lib/retailers/shopify.js';
 import { startServer } from '../server/ui.js';
+import { renderPage } from '../server/render.js';
 import { runCartFlow } from '../lib/flow.js';
 import { extractColorsFromProduct, mergePaletteCandidates } from '../lib/palette-extractor.js';
 
@@ -16,18 +16,19 @@ const noOpen = rawArgs.includes('--no-open');
 const positional = rawArgs.filter((a) => a !== '--no-open');
 const query = positional[0];
 
-if (!query) {
+if (!query || !query.trim()) {
   process.stderr.write('Usage: cart-flow [--no-open] "<query>"\n');
   process.exit(2);
 }
 
-function openUrl(url) {
+function openInBrowser(url) {
   if (process.platform === 'darwin') {
     return new Promise((resolve, reject) => {
       execFile('open', [url], (err) => (err ? reject(err) : resolve()));
     });
   }
   process.stderr.write(`Open this URL: ${url}\n`);
+  return Promise.resolve();
 }
 
 function log(msg) {
@@ -39,32 +40,42 @@ function sleep(ms) {
 }
 
 async function main() {
-  const wrappedOpenUrl = (url) => {
-    process.stdout.write(`__CART_FLOW_URL__ ${url}\n`);
+  // openUrl is called once for the local UI server (emitted as sentinel for
+  // the e2e harness) and N times for retailer cart permalinks. --no-open
+  // suppresses all browser launches; useful for tests.
+  let serverUrlEmitted = false;
+  const openUrl = (url) => {
+    if (!serverUrlEmitted && url.startsWith('http://127.0.0.1')) {
+      process.stdout.write(`__CART_FLOW_URL__ ${url}\n`);
+      serverUrlEmitted = true;
+    }
     if (noOpen) return Promise.resolve();
-    return openUrl(url);
+    return openInBrowser(url);
   };
 
   const result = await runCartFlow({
     query,
     deps: {
-      readProfile, readRetailers, search, getCookieHeader, addToCart,
-      startServer, openUrl: wrappedOpenUrl, openLoginPage, log, sleep,
+      readProfile,
+      readRetailers,
+      search,
+      startServer: () => startServer({ render: renderPage }),
+      openUrl,
+      log,
+      sleep,
       appendPurchase,
       updateProfile: updateFrontmatter,
       extractColors: extractColorsFromProduct,
       mergePalette: mergePaletteCandidates,
+      buildPermalink: buildCartPermalink,
       now: () => new Date().toISOString().slice(0, 10),
     },
   });
 
   switch (result.outcome) {
-    case 'success': {
-      const title = result.product?.title ?? '';
-      const brand = result.product?.brand ?? '';
-      process.stdout.write(
-        `outcome=success product="${title}" brand="${brand}" cart_url="${result.cartUrl}"\n`,
-      );
+    case 'reviewed': {
+      const hostsList = result.carts.map((c) => `${c.host}(${c.count})`).join(',');
+      process.stdout.write(`outcome=reviewed carts="${hostsList}"\n`);
       process.exit(0);
       break;
     }
@@ -72,20 +83,12 @@ async function main() {
       process.stdout.write(`outcome=no_results query="${query}"\n`);
       process.exit(1);
       break;
-    case 'canceled':
-      process.stdout.write('outcome=canceled\n');
+    case 'no_retailers':
+      process.stdout.write('outcome=no_retailers\n');
       process.exit(1);
       break;
     case 'dismissed':
       process.stdout.write('outcome=dismissed\n');
-      process.exit(1);
-      break;
-    case 'auth_required':
-      process.stdout.write(`outcome=auth_required host="${result.host}"\n`);
-      process.exit(1);
-      break;
-    case 'cart_error':
-      process.stdout.write(`outcome=cart_error host="${result.host}" reason="${result.error}"\n`);
       process.exit(1);
       break;
     default:

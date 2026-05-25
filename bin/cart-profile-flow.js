@@ -3,10 +3,7 @@
 // CLI shim: wire real deps, run runProfileFlow, print outcome, exit.
 
 import { execFile } from 'node:child_process';
-import {
-  readProfile, writeProfile, validateProfile,
-  listPendingPurchases, updatePurchase,
-} from '../lib/profile.js';
+import { readProfile, writeProfile, validateProfile } from '../lib/profile.js';
 import { readRetailers, addRetailer, removeRetailer } from '../lib/retailers-store.js';
 import { detect } from '../lib/retailers/shopify.js';
 import { startServer } from '../server/ui.js';
@@ -47,8 +44,6 @@ async function main() {
       readRetailers,
       addRetailer: ({ host }) => addRetailer({ host, detectImpl: detect }),
       removeRetailer,
-      listPending: listPendingPurchases,
-      updatePurchase,
       startServer,
       render: renderPage,
       openUrl: wrappedOpenUrl,

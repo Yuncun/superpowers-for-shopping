@@ -1,881 +1,445 @@
-// test/flow.test.js
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runCartFlow } from '../lib/flow.js';
+import { runCartFlow, diversify } from '../lib/flow.js';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ---------- helpers ----------
 
-function makeCandidates(n) {
-  return Array.from({ length: n }, (_, i) => ({
-    url: `https://marinelayer.com/products/product-${i}`,
-    title: `Product ${i}`,
-    brand: 'Marine Layer',
-    price: '49.00',
-    image: null,
-    variants: [{ size: 'M', color: 'Blue', in_stock: true, variant_id: 1000 + i }],
-  }));
-}
-
-function mockSession({ actions = [] } = {}) {
-  const pushed = [];
-  let i = 0;
-  let closed = false;
+function makeFakeSession() {
+  const states = [];
+  const queue = [];
+  const waiters = [];
   return {
-    pushed,
-    url: 'http://127.0.0.1:9999/r/abc?token=def',
-    pushState: (s) => pushed.push(s),
-    nextAction: async ({ types } = {}) => {
-      while (i < actions.length) {
-        const a = actions[i++];
-        if (!types || types.includes(a.type)) return a;
-      }
-      return new Promise(() => {}); // hang — test will time out if this fires
+    states,
+    session: {
+      url: 'http://127.0.0.1:1/r/x?token=y',
+      pushState(state) { states.push(state); },
+      nextAction({ types } = {}) {
+        const i = queue.findIndex((a) => !types || types.includes(a.type));
+        if (i !== -1) return Promise.resolve(queue.splice(i, 1)[0]);
+        return new Promise((resolve) => waiters.push({ types, resolve }));
+      },
+      _emit(action) {
+        const i = waiters.findIndex((w) => !w.types || w.types.includes(action.type));
+        if (i !== -1) {
+          const [w] = waiters.splice(i, 1);
+          w.resolve(action);
+        } else {
+          queue.push(action);
+        }
+      },
     },
-    close: () => { closed = true; },
-    isClosed: () => closed,
   };
 }
 
-function mockServer(session) {
-  let shutdownCount = 0;
+function makeFakeServer(session) {
+  let shutdownCalled = false;
   return {
-    baseUrl: 'http://127.0.0.1:9999',
-    createSession: () => session,
-    shutdown: async () => { shutdownCount++; },
-    shutdownCount: () => shutdownCount,
+    server: {
+      createSession() { return session; },
+      shutdown() { shutdownCalled = true; return Promise.resolve(); },
+    },
+    didShutdown: () => shutdownCalled,
   };
 }
 
-function baseDeps({ session, server, candidates = makeCandidates(3) } = {}) {
+function emptyProfile(overrides = {}) {
   return {
-    readProfile: async () => ({}),
-    readRetailers: async () => ({ retailers: [{ host: 'marinelayer.com', tier: 2, handler: 'shopify', last_used: '' }] }),
-    search: async (_host) => candidates,
-    getCookieHeader: async () => 'sess=abc',
-    addToCart: async () => ({ ok: true }),
-    startServer: async () => server,
-    openUrl: () => {},
+    sizes: {}, budget_default: 'mid', budget_caps: {}, palette: [],
+    brands_love: [], brands_avoid: [], fit_notes: {}, moodboard_url: '',
+    last_setup: null, purchase_history: [],
+    ...overrides,
+  };
+}
+
+function product(host, i, overrides = {}) {
+  return {
+    title: `Item ${i}`,
+    brand: `Brand ${host}`,
+    price: '100.00',
+    url: `https://${host}/products/item-${i}`,
+    image: `https://${host}/images/${i}.jpg`,
+    variants: [{ size: 'M', color: 'navy', in_stock: true, variant_id: 1000 + i }],
+    ...overrides,
+  };
+}
+
+function baseDeps(overrides = {}) {
+  return {
+    readProfile: async () => emptyProfile(),
+    readRetailers: async () => ({ last_updated: '', retailers: [] }),
+    search: async () => [],
+    openUrl: async () => {},
     log: () => {},
     sleep: async () => {},
-    appendPurchase: async () => {},
-    now: () => '2026-05-11',
-    applyRanking: (c) => c,
+    buildPermalink: (host, variants) => `https://${host}/cart/${variants.map(v => v.variant_id + ':1').join(',')}`,
+    ...overrides,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Task 1: happy path + no-results + cancellation
-// ---------------------------------------------------------------------------
+// ---------- diversify ----------
 
-test('no_results: returns no_results when all searches return empty', async () => {
-  let startServerCalled = false;
-  const deps = {
-    ...baseDeps(),
-    search: async () => [],
-    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
-  };
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'no_results');
-  assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
+test('diversify: round-robins across hosts with per-host cap', () => {
+  const byHost = new Map([
+    ['a.com', [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }]],
+    ['b.com', [{ id: 'b1' }, { id: 'b2' }]],
+    ['c.com', [{ id: 'c1' }]],
+  ]);
+  const out = diversify(byHost, 2, 5);
+  // first round: a1, b1, c1; second round: a2, b2 — c is exhausted.
+  assert.deepEqual(out.map(x => x.id), ['a1', 'b1', 'c1', 'a2', 'b2']);
 });
 
-test('resilience: session_closed during nextAction maps to dismissed outcome', async () => {
-  // Simulate idle-cleanup or external close: nextAction rejects with session_closed.
-  const session = {
-    pushed: [],
-    url: 'http://127.0.0.1:9999/r/abc?token=def',
-    pushState: function(s) { this.pushed.push(s); },
-    nextAction: async () => { const e = new Error('session_closed'); throw e; },
-    close: () => {},
-  };
-  const server = mockServer(session);
-  const okCandidate = { brand: 'B', title: 't', price: '50', image: null, url: 'https://ok.com/products/x', variants: [{variant_id: 1, in_stock: true, size: 'M', color: 'navy'}] };
-  const deps = {
-    ...baseDeps(),
-    search: async () => [okCandidate],
-    startServer: async () => server,
-  };
-  const result = await runCartFlow({ query: 'sweater', retailers: ['ok.com'], deps });
-  assert.equal(result.outcome, 'dismissed');
+test('diversify: with abundant supply from one host, fills past cap (phase-2 refill)', () => {
+  const byHost = new Map([
+    ['a.com', Array.from({ length: 10 }, (_, i) => ({ id: 'a' + i }))],
+  ]);
+  const out = diversify(byHost, 2, 5);
+  // Phase 1 takes 2 from a.com (the cap); phase 2 keeps going to reach n=5.
+  assert.equal(out.length, 5);
+  assert.deepEqual(out.map(x => x.id), ['a0', 'a1', 'a2', 'a3', 'a4']);
 });
 
-test('resilience: a failing retailer search does not block successful ones', async () => {
-  const okCandidate = { brand: 'B', title: 't', price: '50', image: null, url: 'https://ok.com/products/x', variants: [{variant_id: 1, in_stock: true, size: 'M', color: 'navy'}] };
-  const logged = [];
-  const session = mockSession({ actions: [{ type: 'dismissed' }] });
-  const server = mockServer(session);
-  const deps = {
-    ...baseDeps(),
-    log: (m) => logged.push(m),
-    search: async (host) => {
-      if (host === 'broken.com') throw new Error('Expected JSON but got text/html at https://broken.com/products.json');
-      return [okCandidate];
-    },
-    startServer: async () => server,
-  };
+test('diversify: respects cap when multiple hosts can satisfy n', () => {
+  const byHost = new Map([
+    ['a.com', Array.from({ length: 10 }, (_, i) => ({ id: 'a' + i }))],
+    ['b.com', Array.from({ length: 10 }, (_, i) => ({ id: 'b' + i }))],
+    ['c.com', Array.from({ length: 10 }, (_, i) => ({ id: 'c' + i }))],
+  ]);
+  const out = diversify(byHost, 2, 5);
+  // Phase 1 fills exactly 5 (2+2+1) before phase 2 ever runs.
+  assert.equal(out.length, 5);
+  assert.deepEqual(out.map(x => x.id), ['a0', 'b0', 'c0', 'a1', 'b1']);
+});
+
+test('diversify: stops at n', () => {
+  const byHost = new Map([
+    ['a.com', [{ id: 'a1' }, { id: 'a2' }]],
+    ['b.com', [{ id: 'b1' }, { id: 'b2' }]],
+    ['c.com', [{ id: 'c1' }, { id: 'c2' }]],
+    ['d.com', [{ id: 'd1' }, { id: 'd2' }]],
+  ]);
+  const out = diversify(byHost, 2, 3);
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map(x => x.id), ['a1', 'b1', 'c1']);
+});
+
+// ---------- runCartFlow ----------
+
+test('flow: no retailers → no_retailers outcome, no server started', async () => {
+  let serverStarted = false;
   const result = await runCartFlow({
     query: 'sweater',
-    retailers: ['ok.com', 'broken.com'],
-    deps,
+    deps: baseDeps({
+      startServer: async () => { serverStarted = true; return null; },
+    }),
   });
-  // The broken retailer should be logged and skipped. The flow should still start
-  // the server with the one ok candidate, then exit dismissed.
-  assert.equal(result.outcome, 'dismissed');
-  assert.ok(logged.some((m) => m.includes('broken.com')), `expected log to mention broken.com, got: ${logged.join(' | ')}`);
-  // Verify the thumbs state was pushed with the ok candidate
-  const thumbsState = session.pushed.find((s) => s.stage === 'thumbs');
-  assert.ok(thumbsState, 'thumbs state should have been pushed');
-  assert.equal(thumbsState.candidates.length, 1);
-  assert.equal(thumbsState.candidates[0].url, 'https://ok.com/products/x');
+  assert.equal(result.outcome, 'no_retailers');
+  assert.equal(serverStarted, false);
 });
 
-test('no_results: server is not started even with multiple retailers that all return empty', async () => {
-  let startServerCalled = false;
-  const deps = {
-    ...baseDeps(),
-    search: async () => [],
-    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
-  };
+test('flow: empty search results → empty stage → no_results on dismiss', async () => {
+  const { session, states } = makeFakeSession();
+  const { server, didShutdown } = makeFakeServer(session);
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async () => [],
+    }),
+  });
+
+  // Drive: dismiss after the 'empty' state arrives.
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+
+  const result = await flowP;
+  assert.equal(result.outcome, 'no_results');
+  assert.equal(didShutdown(), true);
+  assert.ok(states.some(s => s.stage === 'empty'));
+});
+
+test('flow: pushes initial searching state with all retailers pending', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+  // search never resolves so we can inspect early state.
+  const result = await Promise.race([
+    runCartFlow({
+      query: 'sweater',
+      retailers: ['a.com', 'b.com'],
+      deps: baseDeps({
+        startServer: async () => server,
+        search: () => new Promise(() => {}),
+      }),
+    }),
+    new Promise((r) => setTimeout(() => r({ outcome: 'timeout' }), 50)),
+  ]);
+  assert.equal(result.outcome, 'timeout');
+  const initial = states[0];
+  assert.equal(initial.stage, 'searching');
+  assert.equal(initial.query, 'sweater');
+  assert.equal(initial.retailers.length, 2);
+  assert.equal(initial.retailers[0].status, 'pending');
+  assert.equal(initial.retailers[1].status, 'pending');
+});
+
+test('flow: search errors mark that retailer status=error, continue with others', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['good.com', 'bad.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => {
+        if (host === 'bad.com') throw new Error('boom');
+        return [product(host, 1)];
+      },
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  const result = await flowP;
+
+  assert.equal(result.outcome, 'dismissed');
+  const last = states[states.length - 2]; // 'done' stage before dismiss snapshot
+  const lastSearching = states.filter(s => s.stage === 'searching').pop();
+  const bad = lastSearching.retailers.find(r => r.host === 'bad.com');
+  const good = lastSearching.retailers.find(r => r.host === 'good.com');
+  assert.equal(bad.status, 'error');
+  assert.equal(good.status, 'done');
+});
+
+test('flow: picks top-N diversified across retailers', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  let permalinkArgs = [];
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com', 'b.com', 'c.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [
+        product(host, 1),
+        product(host, 2),
+        product(host, 3),
+        product(host, 4),
+      ],
+      buildPermalink: (host, variants) => {
+        permalinkArgs.push({ host, variants });
+        return `https://${host}/cart/permalink`;
+      },
+    }),
+  });
+
+  // Wait for done state, then dismiss
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+
+  const done = states.find(s => s.stage === 'done');
+  assert.ok(done, 'expected a done state');
+  assert.equal(done.picks.length, 5);
+  // 2 hosts get 2 picks, 1 host gets 1 (round-robin caps at 2/host)
+  const counts = {};
+  for (const p of done.picks) counts[p.host] = (counts[p.host] || 0) + 1;
+  const sortedCounts = Object.values(counts).sort();
+  assert.deepEqual(sortedCounts, [1, 2, 2]);
+  // Carts have one permalink per host involved.
+  assert.equal(done.carts.length, 3);
+});
+
+test('flow: review action opens each cart permalink and appends purchases', async () => {
+  const { session } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  const openedUrls = [];
+  const appendedRows = [];
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [product(host, 1), product(host, 2)],
+      openUrl: async (url) => { openedUrls.push(url); },
+      appendPurchase: async (row) => { appendedRows.push(row); },
+      now: () => '2026-05-24',
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'review' });
+  const result = await flowP;
+
+  assert.equal(result.outcome, 'reviewed');
+  // Local UI server opens first, then cart permalinks.
+  assert.equal(openedUrls[0], session.url || 'http://127.0.0.1:1/r/x?token=y');
+  assert.ok(openedUrls.some(u => u.includes('a.com/cart/')));
+  // 2 picks → 2 history rows.
+  assert.equal(appendedRows.length, 2);
+  assert.equal(appendedRows[0].date, '2026-05-24');
+  assert.ok(appendedRows[0].url.startsWith('https://a.com/'));
+});
+
+test('flow: review updates profile palette when new color tokens appear', async () => {
+  const { session } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  let updatedPalette = null;
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [product(host, 1, { title: 'Navy crew' })],
+      readProfile: async () => emptyProfile({ palette: [] }),
+      extractColors: (p) => p.title.toLowerCase().includes('navy') ? ['navy'] : [],
+      mergePalette: (existing, additions) => Array.from(new Set([...existing, ...additions])),
+      updateProfile: async (updates) => { updatedPalette = updates.palette; },
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'review' });
+  await flowP;
+
+  assert.deepEqual(updatedPalette, ['navy']);
+});
+
+test('flow: drops products with empty variants array', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [
+        { ...product(host, 1), variants: [] }, // dropped
+        product(host, 2),
+      ],
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+
+  const done = states.find(s => s.stage === 'done');
+  assert.equal(done.picks.length, 1);
+  assert.ok(done.picks[0].url.includes('item-2'));
+});
+
+test('flow: dedupes by URL within one retailer', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [
+        product(host, 1),
+        product(host, 1), // duplicate URL
+        product(host, 2),
+      ],
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+
+  const done = states.find(s => s.stage === 'done');
+  assert.equal(done.picks.length, 2);
+});
+
+test('flow: shutdown always runs even when search throws', async () => {
+  const { session } = makeFakeSession();
+  const { server, didShutdown } = makeFakeServer(session);
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async () => { throw new Error('boom'); },
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+  assert.equal(didShutdown(), true);
+});
+
+test('flow: session_closed error is treated as dismissal', async () => {
+  const { session } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+  // Override nextAction to throw session_closed.
+  session.nextAction = () => Promise.reject(Object.assign(new Error('session_closed'), {}));
+
   const result = await runCartFlow({
     query: 'sweater',
-    retailers: ['marinelayer.com', 'example.com'],
-    deps,
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [product(host, 1)],
+    }),
   });
-  assert.equal(result.outcome, 'no_results');
-  assert.equal(startServerCalled, false);
-});
-
-test('uses all candidates when fewer than 8 results', async () => {
-  const candidates = makeCandidates(5);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  const thumbsState = session.pushed.find(s => s.stage === 'thumbs');
-  assert.equal(thumbsState.candidates.length, 5);
-});
-
-test('truncates to 8 candidates when more than 8 results', async () => {
-  const candidates = makeCandidates(12);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  const thumbsState = session.pushed.find(s => s.stage === 'thumbs');
-  assert.equal(thumbsState.candidates.length, 8);
-});
-
-test('happy path: tiebreaker by listing order — index 2 beats index 5 with equal ups', async () => {
-  // Both index 2 and 5 get one up each — listing order wins → index 2
-  const candidates = makeCandidates(8);
-  const session = mockSession({ actions: [
-    { type: 'thumb', direction: 'up', index: 2 },
-    { type: 'thumb', direction: 'up', index: 5 },
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(result.product.title, 'Product 2');
-});
-
-test('happy path: most ups wins — index 2 has 2 ups, index 5 has 1', async () => {
-  const candidates = makeCandidates(8);
-  const session = mockSession({ actions: [
-    { type: 'thumb', direction: 'up', index: 2 },
-    { type: 'thumb', direction: 'up', index: 2 },
-    { type: 'thumb', direction: 'up', index: 5 },
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(result.product.title, 'Product 2');
-});
-
-test('happy path with zero ups: falls back to candidates[0]', async () => {
-  const candidates = makeCandidates(5);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(result.product.title, 'Product 0');
-});
-
-test('happy path pushState sequence: loading, thumbs, final, redirect', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(session.pushed.length, 4);
-  assert.equal(session.pushed[0].stage, 'loading');
-  assert.equal(session.pushed[1].stage, 'thumbs');
-  assert.equal(session.pushed[2].stage, 'final');
-  assert.equal(session.pushed[3].stage, 'redirect');
-});
-
-test('happy path: openUrl called exactly once with session URL', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const openUrlCalls = [];
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    openUrl: (url) => openUrlCalls.push(url),
-  };
-
-  await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(openUrlCalls.length, 1);
-  assert.equal(openUrlCalls[0], session.url);
-});
-
-test('dismissed at thumbs stage: returns dismissed, no final card pushed', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'dismissed' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
   assert.equal(result.outcome, 'dismissed');
-  assert.ok(!session.pushed.some(s => s.stage === 'final'), 'final stage must not be pushed');
 });
 
-test('canceled at final stage: returns canceled', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_cancel' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
+test('flow: serialized picks expose only display fields (no variants/internal data)', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
 
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'canceled');
-});
-
-test('shutdown is called on every exit path', async () => {
-  // happy path
-  {
-    const candidates = makeCandidates(2);
-    const session = mockSession({ actions: [{ type: 'thumbs_complete' }, { type: 'final_accept' }] });
-    const server = mockServer(session);
-    await runCartFlow({ query: 'q', retailers: ['marinelayer.com'], deps: baseDeps({ session, server, candidates }) });
-    assert.equal(server.shutdownCount(), 1, 'happy path must shutdown');
-  }
-  // no_results — server not started, no shutdown call expected
-  {
-    const deps = { ...baseDeps(), search: async () => [], startServer: async () => { throw new Error('must not start'); } };
-    await runCartFlow({ query: 'q', retailers: ['marinelayer.com'], deps });
-  }
-  // canceled
-  {
-    const candidates = makeCandidates(2);
-    const session = mockSession({ actions: [{ type: 'thumbs_complete' }, { type: 'final_cancel' }] });
-    const server = mockServer(session);
-    await runCartFlow({ query: 'q', retailers: ['marinelayer.com'], deps: baseDeps({ session, server, candidates }) });
-    assert.equal(server.shutdownCount(), 1, 'canceled must shutdown');
-  }
-  // dismissed
-  {
-    const candidates = makeCandidates(2);
-    const session = mockSession({ actions: [{ type: 'dismissed' }] });
-    const server = mockServer(session);
-    await runCartFlow({ query: 'q', retailers: ['marinelayer.com'], deps: baseDeps({ session, server, candidates }) });
-    assert.equal(server.shutdownCount(), 1, 'dismissed must shutdown');
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Task 2: auth + cart error paths
-// ---------------------------------------------------------------------------
-
-test('dismissed when getCookieHeader returns null and user dismisses login prompt', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'dismissed' },
-  ]});
-  const server = mockServer(session);
-  let addToCartCalled = false;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => null,
-    addToCart: async () => { addToCartCalled = true; return { ok: true }; },
-    openLoginPage: async () => {},
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'dismissed');
-  assert.equal(addToCartCalled, false, 'addToCart must NOT be called when cookie is null');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('dismissed when addToCart returns authentication_required and user dismisses login prompt', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'dismissed' },
-  ]});
-  const server = mockServer(session);
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => 'sess=abc',
-    addToCart: async () => ({ ok: false, error: 'authentication_required' }),
-    openLoginPage: async () => {},
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'dismissed');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('cart_error when addToCart returns non-auth error', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => 'sess=abc',
-    addToCart: async () => ({ ok: false, error: 'out_of_stock' }),
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'cart_error');
-  assert.equal(result.host, 'marinelayer.com');
-  assert.equal(result.error, 'out_of_stock');
-  const doneState = session.pushed.find(s => s.stage === 'done');
-  assert.ok(doneState, 'done stage must be pushed');
-  assert.ok(doneState.message.includes('out_of_stock'), 'message includes the error');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('cart_error when top.variants is empty — addToCart not called', async () => {
-  const candidates = [
-    {
-      url: 'https://marinelayer.com/products/empty-variants',
-      title: 'Empty Variants Product',
-      brand: 'Marine Layer',
-      price: '59.00',
-      image: null,
-      variants: [],
-    },
-  ];
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  let addToCartCalled = false;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    addToCart: async () => { addToCartCalled = true; return { ok: true }; },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'cart_error');
-  assert.equal(result.error, 'no_variants');
-  assert.equal(addToCartCalled, false, 'addToCart must NOT be called when variants is empty');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('regression: success still works after Task 2 changes', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const deps = { ...baseDeps({ session, server, candidates }) };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.ok(result.product);
-  // cartUrl must be a Shopify permalink so the user's browser does the add
-  // via its own cookies. See lib/flow.js — Node-side addToCart's cookies are
-  // discarded by fetch, so /cart in the user's browser would otherwise be empty.
-  assert.match(
-    result.cartUrl,
-    /^https:\/\/marinelayer\.com\/cart\/\d+:1$/,
-    `expected permalink, got ${result.cartUrl}`,
-  );
-  assert.equal(server.shutdownCount(), 1);
-});
-
-// ---------------------------------------------------------------------------
-// Task 3: no-retailers form — reads from store
-// ---------------------------------------------------------------------------
-
-test('no retailers arg: reads from store and searches that host', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  let readRetailersCalled = 0;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readRetailers: async () => {
-      readRetailersCalled++;
-      return { retailers: [{ host: 'marinelayer.com', tier: 2, handler: 'shopify', last_used: '' }] };
-    },
-    search: async (host, _query) => {
-      assert.equal(host, 'marinelayer.com');
-      return candidates;
-    },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(readRetailersCalled, 1, 'readRetailers must be called once');
-});
-
-test('explicit retailers arg: readRetailers is NOT called', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  let readRetailersCalled = 0;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readRetailers: async () => {
-      readRetailersCalled++;
-      return { retailers: [] };
-    },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['x.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(readRetailersCalled, 0, 'readRetailers must NOT be called when retailers is explicit');
-});
-
-test('empty retailers from store: returns no_results without starting server', async () => {
-  let startServerCalled = false;
-  const deps = {
-    ...baseDeps(),
-    readRetailers: async () => ({ retailers: [] }),
-    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', deps });
-  assert.equal(result.outcome, 'no_results');
-  assert.equal(startServerCalled, false, 'startServer must NOT be called on no_results');
-});
-
-// ---------------------------------------------------------------------------
-// Task 2 (Plan 7): login retry loop
-// ---------------------------------------------------------------------------
-
-test('login retry happy path: null cookie first, cookie on retry, success', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'login_complete' },
-  ]});
-  const server = mockServer(session);
-  let cookieCallCount = 0;
-  let openLoginPageCalls = [];
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async (host) => {
-      cookieCallCount++;
-      return cookieCallCount === 1 ? null : 'sess=abc';
-    },
-    addToCart: async () => ({ ok: true }),
-    openLoginPage: async (host) => { openLoginPageCalls.push(host); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(openLoginPageCalls.length, 1, 'openLoginPage called once');
-  assert.equal(openLoginPageCalls[0], 'marinelayer.com');
-  const loginState = session.pushed.find(s => s.stage === 'login_required');
-  assert.ok(loginState, 'login_required stage must be pushed');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('login retry: null cookie both attempts → auth_required', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'login_complete' },
-  ]});
-  const server = mockServer(session);
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => null,
-    addToCart: async () => ({ ok: true }),
-    openLoginPage: async () => {},
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'auth_required');
-  assert.equal(result.host, 'marinelayer.com');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('login retry: dismissed during login_required → dismissed', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'dismissed' },
-  ]});
-  const server = mockServer(session);
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => null,
-    addToCart: async () => ({ ok: true }),
-    openLoginPage: async () => {},
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'dismissed');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('login retry: addToCart auth_required first, ok on retry → success', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'login_complete' },
-  ]});
-  const server = mockServer(session);
-  let addToCartCallCount = 0;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => 'sess=abc',
-    addToCart: async () => {
-      addToCartCallCount++;
-      return addToCartCallCount === 1
-        ? { ok: false, error: 'authentication_required' }
-        : { ok: true };
-    },
-    openLoginPage: async () => {},
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(addToCartCallCount, 2, 'addToCart called twice (once per attempt)');
-  const loginState = session.pushed.find(s => s.stage === 'login_required');
-  assert.ok(loginState, 'login_required stage must be pushed');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('login retry: non-auth cart error does not trigger retry', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  let openLoginPageCalled = false;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => 'sess=abc',
-    addToCart: async () => ({ ok: false, error: 'out_of_stock' }),
-    openLoginPage: async () => { openLoginPageCalled = true; },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'cart_error');
-  assert.equal(result.error, 'out_of_stock');
-  assert.equal(openLoginPageCalled, false, 'openLoginPage must NOT be called for non-auth errors');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('login retry: openLoginPage is fire-and-forget — slow promise does not block flow', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-    { type: 'dismissed' },
-  ]});
-  const server = mockServer(session);
-  // openLoginPage returns a promise that never resolves — flow must still proceed
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => null,
-    addToCart: async () => ({ ok: true }),
-    openLoginPage: (_host) => new Promise(() => {}), // never resolves
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  // Flow reached login prompt, user dismissed — must not hang
-  assert.equal(result.outcome, 'dismissed');
-  assert.equal(server.shutdownCount(), 1);
-});
-
-test('addToCart is called with correct host, variantId, and cookie', async () => {
-  const candidates = [
-    {
-      url: 'https://marinelayer.com/products/some-sweater',
-      title: 'Some Sweater',
-      brand: 'Marine Layer',
-      price: '75.00',
-      image: null,
-      variants: [{ size: 'M', color: 'Navy', in_stock: true, variant_id: 9876 }],
-    },
-  ];
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  let capturedArgs;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    getCookieHeader: async () => 'mysess=xyz',
-    addToCart: async (args) => { capturedArgs = args; return { ok: true }; },
-  };
-
-  await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.ok(capturedArgs, 'addToCart was called');
-  assert.equal(capturedArgs.host, 'marinelayer.com');
-  assert.equal(capturedArgs.variantId, 9876);
-  assert.equal(capturedArgs.cookie, 'mysess=xyz');
-});
-
-// ---------------------------------------------------------------------------
-// Task 3 (Plan 8): appendPurchase called on success, not on other outcomes
-// ---------------------------------------------------------------------------
-
-test('success path calls appendPurchase once with correct fields', async () => {
-  const candidates = [
-    {
-      url: 'https://marinelayer.com/products/swim-trunk',
-      title: '5" Tailored Swim Trunk',
-      brand: 'Marine Layer',
-      price: '94.00',
-      image: null,
-      variants: [{ size: 'M', color: 'Navy', in_stock: true, variant_id: 1001 }],
-    },
-  ];
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const appendCalls = [];
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    appendPurchase: async (row) => { appendCalls.push(row); },
-    now: () => '2026-05-11',
-  };
-
-  const result = await runCartFlow({ query: 'swim trunk', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(appendCalls.length, 1, 'appendPurchase must be called exactly once');
-  assert.deepEqual(appendCalls[0], {
-    date: '2026-05-11',
-    item: '5" Tailored Swim Trunk',
-    brand: 'Marine Layer',
-    '$': '94.00',
-    kept: '?',
-    notes: '',
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host) => [product(host, 1)],
+    }),
   });
-});
 
-test('non-success outcomes do NOT call appendPurchase', async () => {
-  const candidates = makeCandidates(2);
-  const appendCalls = [];
-  const appendSpy = async (row) => { appendCalls.push(row); };
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
 
-  // canceled
-  {
-    const session = mockSession({ actions: [{ type: 'thumbs_complete' }, { type: 'final_cancel' }] });
-    const server = mockServer(session);
-    const result = await runCartFlow({
-      query: 'q', retailers: ['marinelayer.com'],
-      deps: { ...baseDeps({ session, server, candidates }), appendPurchase: appendSpy },
-    });
-    assert.equal(result.outcome, 'canceled');
+  const done = states.find(s => s.stage === 'done');
+  const pick = done.picks[0];
+  // Display fields present:
+  for (const k of ['title', 'brand', 'price', 'image', 'url', 'host']) {
+    assert.ok(k in pick, `serialized pick missing ${k}`);
   }
-
-  // dismissed
-  {
-    const session = mockSession({ actions: [{ type: 'dismissed' }] });
-    const server = mockServer(session);
-    const result = await runCartFlow({
-      query: 'q', retailers: ['marinelayer.com'],
-      deps: { ...baseDeps({ session, server, candidates }), appendPurchase: appendSpy },
-    });
-    assert.equal(result.outcome, 'dismissed');
-  }
-
-  assert.equal(appendCalls.length, 0, 'appendPurchase must NOT be called on canceled or dismissed');
-});
-
-// ---------------------------------------------------------------------------
-// Plan 9: ranking integration
-// ---------------------------------------------------------------------------
-
-test('ranking: applyRanking is called with deduped candidates and the profile', async () => {
-  const candidates = makeCandidates(3);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const mockProfile = { brands_avoid: [], brands_love: [], budget_caps: {} };
-
-  let capturedCandidates;
-  let capturedProfile;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readProfile: async () => mockProfile,
-    applyRanking: (c, p) => {
-      capturedCandidates = c;
-      capturedProfile = p;
-      return c; // identity — don't filter anything
-    },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.ok(capturedCandidates, 'applyRanking must have been called');
-  assert.equal(capturedCandidates.length, candidates.length, 'deduped candidates passed to applyRanking');
-  assert.equal(capturedProfile, mockProfile, 'profile passed to applyRanking');
-});
-
-test('ranking: empty applyRanking output returns no_results without starting server', async () => {
-  let startServerCalled = false;
-  const candidates = makeCandidates(8);
-  const deps = {
-    ...baseDeps({ candidates }),
-    applyRanking: () => [], // filter everything out
-    startServer: async () => { startServerCalled = true; return mockServer(mockSession()); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'no_results');
-  assert.equal(startServerCalled, false, 'startServer must NOT be called when ranked result is empty');
-});
-
-// ---------------------------------------------------------------------------
-// Plan 10 Task 2: passive palette learning on final-accept success
-// ---------------------------------------------------------------------------
-
-test('palette: success path with new tokens calls updateProfile with merged palette', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const mockProfile = { palette: ['navy'] };
-  const updateCalls = [];
-
-  let extractCalledWith;
-  let mergeCalledWith;
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readProfile: async () => mockProfile,
-    extractColors: (product) => { extractCalledWith = product; return ['olive', 'cream']; },
-    mergePalette: (existing, incoming) => {
-      mergeCalledWith = { existing, incoming };
-      return [...existing, ...incoming];
-    },
-    updateProfile: async (patch) => { updateCalls.push(patch); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.ok(extractCalledWith, 'extractColors was called');
-  assert.equal(extractCalledWith.url, result.product.url, 'extractColors called with the accepted product');
-  assert.deepEqual(mergeCalledWith.existing, ['navy']);
-  assert.deepEqual(mergeCalledWith.incoming, ['olive', 'cream']);
-  assert.equal(updateCalls.length, 1, 'updateProfile must be called exactly once');
-  assert.deepEqual(updateCalls[0], { palette: ['navy', 'olive', 'cream'] });
-});
-
-test('palette: extractColors returns [] → updateProfile NOT called', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const updateCalls = [];
-  let mergeCalled = false;
-
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readProfile: async () => ({ palette: ['navy'] }),
-    extractColors: () => [],
-    mergePalette: (existing, incoming) => { mergeCalled = true; return [...existing, ...incoming]; },
-    updateProfile: async (patch) => { updateCalls.push(patch); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(mergeCalled, false, 'mergePalette must NOT be called when extract returns []');
-  assert.equal(updateCalls.length, 0, 'updateProfile must NOT be called when extract returns []');
-});
-
-test('palette: all extracted tokens already in palette → updateProfile NOT called', async () => {
-  const candidates = makeCandidates(2);
-  const session = mockSession({ actions: [
-    { type: 'thumbs_complete' },
-    { type: 'final_accept' },
-  ]});
-  const server = mockServer(session);
-  const existingPalette = ['navy', 'olive'];
-  const updateCalls = [];
-
-  const deps = {
-    ...baseDeps({ session, server, candidates }),
-    readProfile: async () => ({ palette: existingPalette }),
-    extractColors: () => ['navy'],
-    // Stubbed mergePalette returns the existing array unchanged (same length).
-    mergePalette: (existing, _incoming) => [...existing],
-    updateProfile: async (patch) => { updateCalls.push(patch); },
-  };
-
-  const result = await runCartFlow({ query: 'sweater', retailers: ['marinelayer.com'], deps });
-  assert.equal(result.outcome, 'success');
-  assert.equal(updateCalls.length, 0, 'updateProfile must NOT be called when merged length equals existing length');
+  // Internal fields stripped:
+  assert.ok(!('variants' in pick), 'variants must be stripped from serialized pick');
 });
