@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.1 — 2026-05-24
+
+`/cart "A sweater - light, kind of baggy, modern"` was returning zero results
+because Shopify's `/search/suggest.json` does substring matching on product
+titles — no real product title contains "A sweater - light, kind of baggy,
+modern" all at once.
+
+Added `simplifyQuery` that runs before searches fan out:
+
+- cuts at the first descriptive separator (`-`, `—`, `,`, `(`),
+- strips a leading article (a / an / the / some / any),
+- leaves the head noun phrase to send to retailers.
+
+The UI still shows the user's original query string; only the wire query
+shrinks. `"A sweater - light, kind of baggy, modern"` → `"sweater"` for
+Shopify; same flow as if the user had typed "sweater" directly.
+
+8 new unit tests; suite at 236 passing.
+
 ## 1.0.0 — 2026-05-24
 
 "Threat Mode." `/cart` no longer asks for input mid-flow. Query → spinner →

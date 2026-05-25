@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runCartFlow, diversify } from '../lib/flow.js';
+import { runCartFlow, diversify, simplifyQuery } from '../lib/flow.js';
 
 // ---------- helpers ----------
 
@@ -75,6 +75,74 @@ function baseDeps(overrides = {}) {
     ...overrides,
   };
 }
+
+// ---------- simplifyQuery ----------
+
+test('simplifyQuery: passes simple noun phrase through unchanged', () => {
+  assert.equal(simplifyQuery('sweater'), 'sweater');
+  assert.equal(simplifyQuery('wool sweater'), 'wool sweater');
+  assert.equal(simplifyQuery('merino crewneck pullover'), 'merino crewneck pullover');
+});
+
+test('simplifyQuery: cuts at dash-separated descriptive clause', () => {
+  assert.equal(simplifyQuery('A sweater - light, kind of baggy, modern'), 'sweater');
+  assert.equal(simplifyQuery('linen pants — slim, cropped'), 'linen pants');
+});
+
+test('simplifyQuery: cuts at first comma', () => {
+  assert.equal(simplifyQuery('linen pants, baggy'), 'linen pants');
+});
+
+test('simplifyQuery: cuts at parenthetical', () => {
+  assert.equal(simplifyQuery('white tee (relaxed fit)'), 'white tee');
+});
+
+test('simplifyQuery: strips leading articles', () => {
+  assert.equal(simplifyQuery('A sweater'), 'sweater');
+  assert.equal(simplifyQuery('an oxford shirt'), 'oxford shirt');
+  assert.equal(simplifyQuery('The boxy crew'), 'boxy crew');
+  assert.equal(simplifyQuery('some chinos'), 'chinos');
+  assert.equal(simplifyQuery('any blazer'), 'blazer');
+});
+
+test('simplifyQuery: empty / whitespace returns empty string', () => {
+  assert.equal(simplifyQuery(''), '');
+  assert.equal(simplifyQuery('   '), '');
+  assert.equal(simplifyQuery(null), '');
+  assert.equal(simplifyQuery(undefined), '');
+});
+
+test('simplifyQuery: does not eat words mid-noun-phrase', () => {
+  // "Andre Agassi tee" must not lose the "A" — the article regex requires a
+  // word boundary that's a standalone article, not a prefix.
+  assert.equal(simplifyQuery('Andre Agassi tee'), 'Andre Agassi tee');
+});
+
+test('flow: uses simplified query for search calls but echoes original in UI', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+  const seenQueries = [];
+
+  const flowP = runCartFlow({
+    query: 'A sweater - light, kind of baggy, modern',
+    retailers: ['a.com'],
+    deps: baseDeps({
+      startServer: async () => server,
+      search: async (host, q) => { seenQueries.push(q); return [product(host, 1)]; },
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+
+  // Retailer received the simplified query.
+  assert.equal(seenQueries[0], 'sweater');
+  // UI still sees the original query string.
+  assert.equal(states[0].query, 'A sweater - light, kind of baggy, modern');
+});
 
 // ---------- diversify ----------
 
