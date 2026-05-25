@@ -418,6 +418,12 @@ window.__SESSION__ = ${sessionJson};
     intro.textContent = 'How you shop. /cart uses this to rank candidates.';
     wrap.appendChild(intro);
 
+    wrap.appendChild(section('Shopping for', [
+      radioRow('shopping_for', 'Category',
+        [['', 'Any'], ['mens', "Men's"], ['womens', "Women's"], ['kids', 'Kids']],
+        profile.shopping_for || ''),
+    ]));
+
     wrap.appendChild(section('Sizes', [
       textRow('sizes.top', 'Top', (profile.sizes || {}).top, 'S / M / L / XL'),
       textRow('sizes.bottom', 'Bottom', (profile.sizes || {}).bottom, 'waist x inseam, e.g. 32x32'),

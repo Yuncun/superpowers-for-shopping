@@ -1,6 +1,6 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Low-friction shopping. /cart \"a new sweater\" → populated carts at multiple retailers → one Review button.",
   "author": {
     "name": "Eric Shen"

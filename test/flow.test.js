@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runCartFlow, diversify, simplifyQuery } from '../lib/flow.js';
+import { runCartFlow, diversify, simplifyQuery, prefixForShoppingFor, urlContradictsShoppingFor } from '../lib/flow.js';
 
 // ---------- helpers ----------
 
@@ -142,6 +142,92 @@ test('flow: uses simplified query for search calls but echoes original in UI', a
   assert.equal(seenQueries[0], 'sweater');
   // UI still sees the original query string.
   assert.equal(states[0].query, 'A sweater - light, kind of baggy, modern');
+});
+
+// ---------- prefixForShoppingFor ----------
+
+test('prefixForShoppingFor: empty preference is a no-op', () => {
+  assert.equal(prefixForShoppingFor('sweater', ''), 'sweater');
+  assert.equal(prefixForShoppingFor('sweater', null), 'sweater');
+  assert.equal(prefixForShoppingFor('sweater', undefined), 'sweater');
+});
+
+test('prefixForShoppingFor: prepends the preference word', () => {
+  assert.equal(prefixForShoppingFor('sweater', 'mens'), 'mens sweater');
+  assert.equal(prefixForShoppingFor('sweater', 'womens'), 'womens sweater');
+  assert.equal(prefixForShoppingFor('sweater', 'kids'), 'kids sweater');
+});
+
+test('prefixForShoppingFor: avoids double-prefixing when user already typed it', () => {
+  assert.equal(prefixForShoppingFor('mens sweater', 'mens'), 'mens sweater');
+  assert.equal(prefixForShoppingFor('Mens Sweater', 'mens'), 'Mens Sweater');
+});
+
+// ---------- urlContradictsShoppingFor ----------
+
+test('urlContradictsShoppingFor: no preference → never contradicts', () => {
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/womens-crew', ''), false);
+});
+
+test('urlContradictsShoppingFor: drops womens slug when shopping mens', () => {
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/womens-crew-navy', 'mens'), true);
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/women-organic-tee', 'mens'), true);
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/kids-sweater', 'mens'), true);
+});
+
+test('urlContradictsShoppingFor: keeps mens slug when shopping mens', () => {
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/mens-crew-navy', 'mens'), false);
+  assert.equal(urlContradictsShoppingFor('https://everlane.com/products/men-crewneck', 'mens'), false);
+});
+
+test('urlContradictsShoppingFor: keeps gender-neutral slug', () => {
+  // Marine Layer products without gender slug pass through (we cannot tell)
+  assert.equal(urlContradictsShoppingFor('https://marinelayer.com/products/icon-sweater-6', 'mens'), false);
+  assert.equal(urlContradictsShoppingFor('https://marinelayer.com/products/icon-sweater-6', 'womens'), false);
+});
+
+test('urlContradictsShoppingFor: matches token only at word boundaries', () => {
+  // "amends" or "lumens" should not be misread as gender tokens.
+  assert.equal(urlContradictsShoppingFor('https://x.com/products/amends-tee', 'womens'), false);
+  assert.equal(urlContradictsShoppingFor('https://x.com/products/lumens-of-light', 'womens'), false);
+});
+
+test('flow: shopping_for=mens prefixes query and filters womens slugs', async () => {
+  const { session, states } = makeFakeSession();
+  const { server } = makeFakeServer(session);
+  const seenQueries = [];
+
+  const flowP = runCartFlow({
+    query: 'sweater',
+    retailers: ['everlane.com'],
+    deps: baseDeps({
+      readProfile: async () => emptyProfile({ shopping_for: 'mens' }),
+      startServer: async () => server,
+      search: async (host, q) => {
+        seenQueries.push(q);
+        return [
+          { ...product(host, 1), url: 'https://everlane.com/products/mens-organic-crew' },
+          { ...product(host, 2), url: 'https://everlane.com/products/womens-boxy-sweater' },
+          { ...product(host, 3), url: 'https://everlane.com/products/wool-cardigan' },
+        ];
+      },
+    }),
+  });
+
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  session._emit({ type: 'dismissed' });
+  await flowP;
+
+  // Search query was prefixed.
+  assert.equal(seenQueries[0], 'mens sweater');
+  // Womens product was filtered; mens + gender-neutral kept.
+  const done = states.find(s => s.stage === 'done');
+  const urls = done.picks.map(p => p.url);
+  assert.ok(urls.some(u => u.includes('mens-organic-crew')));
+  assert.ok(urls.some(u => u.includes('wool-cardigan')));
+  assert.ok(!urls.some(u => u.includes('womens-')));
 });
 
 // ---------- diversify ----------

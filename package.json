@@ -1,6 +1,6 @@
 {
   "name": "superpowers-for-shopping",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Low-friction shopping for Claude Code: query → populated carts → one Review button.",
   "type": "module",
   "private": true,

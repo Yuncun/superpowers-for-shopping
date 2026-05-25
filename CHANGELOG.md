@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.2 — 2026-05-24
+
+`/cart` was returning women's sweaters for a male user. The profile had
+sizes (top: M, bottom: 32x32, shoes: 11.5) that screamed men's, but the
+schema had nowhere to record category preference, so Shopify's relevance
+ranking was free to serve whatever it served.
+
+### New: `shopping_for` profile field
+
+`'' | mens | womens | kids`. Defaults to `''` (no preference). Exposed in
+the `/cart-profile` Profile tab as a radio row at the top of the form.
+
+When set, `/cart`:
+
+1. **Prefixes the search query** with the preference word so retailers
+   that include gender in titles (Marine Layer's "Mens Sweater Polo")
+   surface the right category. Avoids double-prefixing when the user
+   already typed it.
+2. **Falls back to the plain query** when the prefixed search returns 0
+   — some retailers (Everlane) only mark gender in URL slugs, not titles,
+   so prefixing kills their recall.
+3. **Filters product URLs** that contain a contradicting gender slug
+   (`/products/womens-*` is dropped when shopping mens, and vice versa).
+   Word-boundary matching so "amends" and "lumens" don't false-positive.
+4. Marine Layer / Allbirds / similar without gender slugs pass through;
+   the prefix step is the only filter we have for those.
+
+Honest result on a thin-gender retailer: 4 right-gender picks beats 5
+half-right picks. The TARGET_PICKS=5 contract is best-effort.
+
+9 new tests; suite at 245 passing.
+
 ## 1.0.1 — 2026-05-24
 
 `/cart "A sweater - light, kind of baggy, modern"` was returning zero results
